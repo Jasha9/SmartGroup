@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
+import CreateGroupButton from '@/components/workspace/CreateGroupButton';
 import { Plus, Clock } from 'lucide-react';
 
 const columns = [
@@ -49,9 +50,12 @@ export default function GroupWorkspacePage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Group Workspace</h2>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Research Methods Group Project</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Group Workspace</h2>
+            <p className="text-slate-500 dark:text-slate-400 mt-1">Research Methods Group Project</p>
+          </div>
+          <CreateGroupButton />
         </div>
         <Button>
           <Plus className="w-4 h-4" />
