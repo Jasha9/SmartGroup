@@ -1,8 +1,21 @@
-import Link from 'next/link';
+'use client';
+
 import { Sparkles } from 'lucide-react';
 import ThemeToggle from '@/components/theme/ThemeToggle';
+import api from '@/services/api';
 
 export default function LoginPage() {
+  const handleMockLogin = async () => {
+    try {
+      const response = await api.post('/auth/mock-login');
+      console.log('Login successful:', response.data);
+      window.location.href = '/dashboard';
+    } catch (error) {
+      console.error('Login failed:', error);
+      window.location.href = '/dashboard';
+    }
+  };
+
   return (
     <div className="min-h-screen relative flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-violet-950">
       {/* Theme toggle */}
@@ -32,8 +45,8 @@ export default function LoginPage() {
 
           <div className="space-y-4">
             {/* Google sign-in */}
-            <Link
-              href="/dashboard"
+            <button
+              onClick={handleMockLogin}
               className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-md transition-all"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
@@ -43,7 +56,7 @@ export default function LoginPage() {
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
               </svg>
               Continue with Google
-            </Link>
+            </button>
 
             <div className="relative flex items-center gap-4">
               <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
@@ -63,12 +76,12 @@ export default function LoginPage() {
                 placeholder="Password"
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
               />
-              <Link
-                href="/dashboard"
+              <button
+                onClick={handleMockLogin}
                 className="flex items-center justify-center w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white text-sm font-medium shadow-sm hover:shadow-md transition-all"
               >
                 Sign in
-              </Link>
+              </button>
             </div>
           </div>
 
