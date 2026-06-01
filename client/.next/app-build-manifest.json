@@ -26,16 +26,6 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/dashboard/page.js"
     ],
-    "/(dashboard)/workspace/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/workspace/page.js"
-    ],
-    "/(dashboard)/charter/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/charter/page.js"
-    ],
     "/(dashboard)/ai-planner/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
