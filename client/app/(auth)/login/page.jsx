@@ -1,7 +1,21 @@
+'use client';
+
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
+import api from '@/services/api';
 
 export default function LoginPage() {
+  const handleMockLogin = async () => {
+    try {
+      const response = await api.post('/auth/mock-login');
+      console.log('Login successful:', response.data);
+      window.location.href = '/dashboard';
+    } catch (error) {
+      console.error('Login failed:', error);
+      window.location.href = '/dashboard';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <div className="mx-auto grid min-h-screen max-w-7xl grid-cols-1 items-center gap-10 px-6 py-10 lg:grid-cols-2 lg:px-10">

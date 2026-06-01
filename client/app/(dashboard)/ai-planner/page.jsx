@@ -1,40 +1,41 @@
 'use client';
 
 import { useState } from 'react';
+import { generateTasks } from '@/services/aiService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
-import { Upload, Sparkles, AlertCircle, CheckCircle2, Edit2, Trash2 } from 'lucide-react';
-
-const initialTasks = [
-  { id: 1, title: 'Conduct literature review on mixed methods research', assignee: 'Alice Chen', dueDate: 'Jun 3', priority: 'high', accepted: false },
-  { id: 2, title: 'Design survey instrument with 20+ questions', assignee: 'Bob Smith', dueDate: 'Jun 5', priority: 'high', accepted: false },
-  { id: 3, title: 'Collect and code qualitative interview data', assignee: 'Carol Davis', dueDate: 'Jun 10', priority: 'medium', accepted: false },
-  { id: 4, title: 'Perform statistical analysis using SPSS', assignee: 'You (John)', dueDate: 'Jun 15', priority: 'medium', accepted: false },
-  { id: 5, title: 'Write methodology chapter', assignee: 'Alice Chen', dueDate: 'Jun 20', priority: 'medium', accepted: false },
-];
+import { Upload, Sparkles, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react';
 
 const USAGE = 3;
 const USAGE_MAX = 10;
 
 export default function AIPlannerPage() {
-  const [tasks, setTasks] = useState(initialTasks);
   const [uploaded, setUploaded] = useState(false);
-  const [generated, setGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [generatedTasks, setGeneratedTasks] = useState([]);
+  const [error, setError] = useState('');
 
-  const handleGenerate = () => {
-    setLoading(true);
-    setTimeout(() => {
+  const handleGenerateTasks = async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      const data = await generateTasks();
+
+      setGeneratedTasks(data.tasks || []);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to generate tasks. Please check if the backend is running.');
+    } finally {
       setLoading(false);
-      setGenerated(true);
-    }, 1500);
+    }
   };
 
   const toggleAccept = (id) =>
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, accepted: !t.accepted } : t)));
+    setGeneratedTasks((prev) => prev.map((t) => (t.id === id ? { ...t, accepted: !t.accepted } : t)));
 
-  const removeTask = (id) => setTasks((prev) => prev.filter((t) => t.id !== id));
+  const removeTask = (id) => setGeneratedTasks((prev) => prev.filter((t) => t.id !== id));
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -78,7 +79,7 @@ export default function AIPlannerPage() {
               )}
             </button>
 
-            <Button onClick={handleGenerate} disabled={!uploaded || loading} className="w-full">
+            <Button onClick={handleGenerateTasks} disabled={!uploaded || loading} className="w-full">
               {loading ? (
                 <>
                   <Sparkles className="w-4 h-4 animate-pulse" /> Generating…
@@ -139,8 +140,16 @@ export default function AIPlannerPage() {
         </p>
       </div>
 
-      {/* Task preview */}
-      {generated && (
+      {/* Error message */}
+      {error && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+        </div>
+      )}
+
+      {/* AI-returned task preview */}
+      {generatedTasks.length > 0 && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -155,7 +164,7 @@ export default function AIPlannerPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {tasks.map((task) => (
+              {generatedTasks.map((task) => (
                 <div
                   key={task.id}
                   className={`flex items-start gap-4 px-6 py-4 transition-colors ${
@@ -167,13 +176,18 @@ export default function AIPlannerPage() {
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                         {task.title}
                       </p>
-                      <Badge variant={task.priority === 'high' ? 'destructive' : 'default'}>
+                      <Badge variant={task.priority === 'High' ? 'destructive' : 'default'}>
                         {task.priority}
                       </Badge>
                     </div>
+                    {task.description && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+                        {task.description}
+                      </p>
+                    )}
                     <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                      <span>Assignee: {task.assignee}</span>
-                      <span>Due: {task.dueDate}</span>
+                      {task.assigned_to && <span>Assignee: {task.assigned_to}</span>}
+                      {task.status && <span>Status: {task.status}</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
