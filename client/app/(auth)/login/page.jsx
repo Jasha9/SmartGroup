@@ -9,11 +9,9 @@ export default function LoginPage() {
     try {
       const response = await api.post('/auth/mock-login');
       console.log('Login successful:', response.data);
-
       window.location.href = '/dashboard';
     } catch (error) {
       console.error('Login failed:', error);
-      // Fallback: navigate anyway for frontend-only testing
       window.location.href = '/dashboard';
     }
   };
@@ -46,7 +44,7 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-4">
-            {/* Google / mock sign-in */}
+            {/* Google sign-in */}
             <button
               onClick={handleMockLogin}
               className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-md transition-all"

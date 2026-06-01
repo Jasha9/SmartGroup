@@ -32,13 +32,10 @@ export default function AIPlannerPage() {
     }
   };
 
-  const removeTask = (id) =>
-    setGeneratedTasks((prev) => prev.filter((t) => t.id !== id));
-
   const toggleAccept = (id) =>
-    setGeneratedTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, accepted: !t.accepted } : t))
-    );
+    setGeneratedTasks((prev) => prev.map((t) => (t.id === id ? { ...t, accepted: !t.accepted } : t)));
+
+  const removeTask = (id) => setGeneratedTasks((prev) => prev.filter((t) => t.id !== id));
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -82,11 +79,7 @@ export default function AIPlannerPage() {
               )}
             </button>
 
-            <Button
-              onClick={handleGenerateTasks}
-              disabled={!uploaded || loading}
-              className="w-full"
-            >
+            <Button onClick={handleGenerateTasks} disabled={!uploaded || loading} className="w-full">
               {loading ? (
                 <>
                   <Sparkles className="w-4 h-4 animate-pulse" /> Generating…
@@ -110,10 +103,7 @@ export default function AIPlannerPage() {
             <div className="text-center py-2">
               <div className="relative w-24 h-24 mx-auto mb-3">
                 <svg className="w-24 h-24 -rotate-90" viewBox="0 0 96 96">
-                  <circle
-                    cx="48" cy="48" r="40" fill="none" stroke="currentColor"
-                    strokeWidth="8" className="text-slate-100 dark:text-slate-800"
-                  />
+                  <circle cx="48" cy="48" r="40" fill="none" stroke="currentColor" strokeWidth="8" className="text-slate-100 dark:text-slate-800" />
                   <circle
                     cx="48" cy="48" r="40" fill="none" strokeWidth="8"
                     stroke="url(#usageGrad)"
@@ -186,7 +176,7 @@ export default function AIPlannerPage() {
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                         {task.title}
                       </p>
-                      <Badge variant={task.priority === 'high' ? 'destructive' : 'default'}>
+                      <Badge variant={task.priority === 'High' ? 'destructive' : 'default'}>
                         {task.priority}
                       </Badge>
                     </div>
