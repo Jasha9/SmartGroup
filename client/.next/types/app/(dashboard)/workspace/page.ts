@@ -1,4 +1,4 @@
-// File: c:\Users\jasha\OneDrive\Documents\SmartGroup\SmartGroup\client\app\(dashboard)\workspace\page.jsx
+// File: C:\Users\jasha\OneDrive\Documents\SmartGroup\SmartGroup\client\app\(dashboard)\workspace\page.jsx
 import * as entry from '../../../../../app/(dashboard)/workspace/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

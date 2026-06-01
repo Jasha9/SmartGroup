@@ -1,4 +1,4 @@
-// File: c:\Users\jasha\OneDrive\Documents\SmartGroup\SmartGroup\client\app\(dashboard)\ai-planner\page.jsx
+// File: C:\Users\jasha\OneDrive\Documents\SmartGroup\SmartGroup\client\app\(dashboard)\ai-planner\page.jsx
 import * as entry from '../../../../../app/(dashboard)/ai-planner/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
