@@ -4,9 +4,10 @@ const TaskCard = ({ task, onMove }) => {
   return (
     <div className="task-card" draggable>
       <h4>{task.title}</h4>
-      <p>{task.description}</p>
-      <div className="task-footer">
-        {/* Task metadata */}
+      <p className="text-sm text-gray-600">Assigned to {task.assignee}</p>
+      <div className="task-footer mt-2 flex justify-between text-xs text-gray-500">
+        <span>Priority: {task.priority}</span>
+        <span>Status: {task.status.replace('_', ' ')}</span>
       </div>
     </div>
   );

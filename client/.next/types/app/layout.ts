@@ -1,4 +1,4 @@
-// File: c:\Users\jasha\OneDrive\Documents\SmartGroup\SmartGroup\client\app\layout.jsx
+// File: C:\Users\pk021\OneDrive\Desktop\SmartGroup\SmartGroup\client\app\layout.jsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

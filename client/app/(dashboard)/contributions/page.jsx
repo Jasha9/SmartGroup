@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
+import LoadingState from '@/components/ui/LoadingState';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Trophy, TrendingUp, Users, AlertCircle } from 'lucide-react';
 
@@ -28,6 +29,16 @@ const healthConfig = {
 const topContributor = [...members].sort((a, b) => b.percentage - a.percentage)[0];
 
 export default function ContributionDashboardPage() {
+  const isLoading = false;
+
+  if (isLoading) {
+    return (
+      <div className="max-w-6xl mx-auto mt-6">
+        <LoadingState message="Loading contribution dashboard..." />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div>

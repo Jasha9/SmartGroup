@@ -6,9 +6,15 @@ const KanbanColumn = ({ title, tasks, onTaskMove }) => {
     <div className="kanban-column">
       <h3>{title}</h3>
       <div className="tasks-container">
-        {tasks && tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onMove={onTaskMove} />
-        ))}
+        {tasks && tasks.length > 0 ? (
+          tasks.map((task) => (
+            <TaskCard key={task.id} task={task} onMove={onTaskMove} />
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No tasks available yet.
+          </p>
+        )}
       </div>
     </div>
   );
