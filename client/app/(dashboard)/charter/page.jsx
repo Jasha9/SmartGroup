@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
+import LoadingState from '@/components/ui/LoadingState';
 import { CheckCircle2, ArrowLeftRight, FileText, Shield } from 'lucide-react';
 
 const responsibilities = [
@@ -49,6 +50,16 @@ const statusConfig = {
 };
 
 export default function CharterPage() {
+  const isLoading = false;
+
+  if (isLoading) {
+    return (
+      <div className="max-w-5xl mx-auto mt-6">
+        <LoadingState message="Loading charter information..." />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between">
