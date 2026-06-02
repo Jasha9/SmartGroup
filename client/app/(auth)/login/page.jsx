@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 import api from '@/services/api';
 
@@ -65,8 +64,8 @@ export default function LoginPage() {
             </h2>
           </div>
 
-          <Link
-            href="/dashboard"
+          <button
+            onClick={handleMockLogin}
             className="flex items-center justify-center gap-3 w-full rounded-3xl border border-slate-200 bg-slate-100 px-5 py-4 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
@@ -76,7 +75,7 @@ export default function LoginPage() {
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
             </svg>
             Continue with Google
-          </Link>
+          </button>
 
           <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-500">
             Requires a verified university <span className="font-semibold text-slate-950">@gmail.com</span> account for authentication.
