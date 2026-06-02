@@ -1,6 +1,28 @@
 import api from "./api";
 
-export async function generateTasks() {
-  const response = await api.post("/ai/generate-tasks");
-  return response.data;
+export async function getGroups() {
+  try {
+    const response = await api.get("/groups");
+    return response.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.error || "Failed to load groups.");
+  }
+}
+
+export async function generateTasks(groupId, promptText) {
+  try {
+    const response = await api.post("/ai/generate-tasks", { groupId, promptText });
+    return response.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.error || "Failed to generate tasks.");
+  }
+}
+
+export async function saveTasks(groupId, tasks) {
+  try {
+    const response = await api.post("/tasks", { groupId, tasks });
+    return response.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.error || "Failed to save tasks.");
+  }
 }
