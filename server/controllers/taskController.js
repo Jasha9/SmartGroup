@@ -84,4 +84,55 @@ async function createTasks(req, res) {
   }
 }
 
-module.exports = { getTasks, createTasks };
+// PATCH /api/tasks/:taskId
+async function updateTask(req, res) {
+  const { taskId } = req.params;
+  const { title, description, status, priority, assigned_to_email, due_date } = req.body;
+  const userId = req.user.user_id;
+
+  if (!taskId) {
+    return res.status(400).json({ success: false, error: 'Task ID is required.' });
+  }
+
+  try {
+    let assignedUserId = null;
+    if (assigned_to_email) {
+      const userRes = await pool.query(`SELECT user_id FROM users WHERE email = $1`, [assigned_to_email.trim().toLowerCase()]);
+      if (userRes.rows.length > 0) {
+        assignedUserId = userRes.rows[0].user_id;
+      }
+    }
+
+    const updateQuery = `
+      UPDATE tasks
+      SET title = COALESCE(NULLIF($1, ''), title),
+          description = COALESCE($2, description),
+          status = COALESCE($3, status),
+          priority = COALESCE($4, priority),
+          assigned_to = CASE WHEN $5 IS NOT NULL THEN $5 ELSE assigned_to END,
+          due_date = $6
+      WHERE task_id = $7
+      RETURNING *`;
+
+    const taskResult = await pool.query(updateQuery, [
+      title,
+      description,
+      status,
+      priority ? priority.toUpperCase() : null,
+      assignedUserId,
+      due_date || null,
+      taskId,
+    ]);
+
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Task not found.' });
+    }
+
+    return res.json({ success: true, data: { task: taskResult.rows[0] } });
+  } catch (err) {
+    console.error('[updateTask]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to update task.' });
+  }
+}
+
+module.exports = { getTasks, createTasks, updateTask };

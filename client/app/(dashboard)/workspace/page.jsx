@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { getGroups } from '@/services/groupService';
-import { getTasks } from '@/services/taskService';
+import { getGroups, updateGroup, deleteGroup } from '@/services/groupService';
+import { getTasks, createTask, updateTask } from '@/services/taskService';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
 import CreateGroupButton from '@/components/workspace/CreateGroupButton';
+import CreateGroupModal from '@/components/workspace/CreateGroupModal';
+import AddTaskModal from '@/components/workspace/AddTaskModal';
 import { Plus, Clock } from 'lucide-react';
 
 const COLUMNS = [
@@ -56,25 +58,37 @@ export default function GroupWorkspacePage() {
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [error, setError] = useState(null);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupModalGroup, setGroupModalGroup] = useState(null);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
-  useEffect(() => {
-    async function fetchGroups() {
-      try {
-        const data = await getGroups();
-        const list = data?.data?.groups || data?.groups || [];
-        setGroups(list);
-        if (list.length > 0) setSelectedGroup(list[0]);
-      } catch {
-        setError('Failed to load groups. Please try again.');
-      } finally {
-        setLoadingGroups(false);
-      }
+  const refreshGroups = useCallback(async () => {
+    try {
+      const data = await getGroups();
+      const list = data?.data?.groups || data?.groups || [];
+      setGroups(list);
+      return list;
+    } catch {
+      setError('Failed to load groups. Please try again.');
+      return [];
     }
-    fetchGroups();
   }, []);
 
+  useEffect(() => {
+    async function loadGroups() {
+      const list = await refreshGroups();
+      if (list.length > 0) setSelectedGroup(list[0]);
+      setLoadingGroups(false);
+    }
+    loadGroups();
+  }, [refreshGroups]);
+
   const fetchTasks = useCallback(async (group) => {
-    if (!group) return;
+    if (!group) {
+      setTasks([]);
+      return;
+    }
     setLoadingTasks(true);
     setError(null);
     try {
@@ -83,6 +97,7 @@ export default function GroupWorkspacePage() {
       setTasks(data?.data?.tasks || data?.tasks || []);
     } catch {
       setError('Failed to load tasks. Please try again.');
+      setTasks([]);
     } finally {
       setLoadingTasks(false);
     }
@@ -93,15 +108,66 @@ export default function GroupWorkspacePage() {
   }, [selectedGroup, fetchTasks]);
 
   const handleGroupCreated = useCallback(async () => {
-    try {
-      const data = await getGroups();
-      const list = data?.data?.groups || data?.groups || [];
-      setGroups(list);
-      if (list.length > 0 && !selectedGroup) setSelectedGroup(list[0]);
-    } catch {
-      // ignore refresh error
+    const list = await refreshGroups();
+    if (selectedGroup) {
+      const active = list.find((g) => (g.group_id || g.id) === (selectedGroup.group_id || selectedGroup.id));
+      setSelectedGroup(active || list[0] || null);
+    } else if (list.length > 0) {
+      setSelectedGroup(list[0]);
     }
-  }, [selectedGroup]);
+  }, [refreshGroups, selectedGroup]);
+
+  const handleGroupUpdated = useCallback(async () => {
+    const list = await refreshGroups();
+    const active = list.find((g) => (g.group_id || g.id) === (selectedGroup?.group_id || selectedGroup?.id));
+    setSelectedGroup(active || list[0] || null);
+  }, [refreshGroups, selectedGroup]);
+
+  const handleDeleteGroup = async () => {
+    if (!selectedGroup) return;
+    const confirmDelete = window.confirm('Delete this group and all its tasks? This cannot be undone.');
+    if (!confirmDelete) return;
+    try {
+      setActionError(null);
+      const groupId = selectedGroup.group_id || selectedGroup.id;
+      await deleteGroup(groupId);
+      const list = await refreshGroups();
+      setSelectedGroup(list[0] || null);
+      setTasks([]);
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to delete group. Please try again.');
+    }
+  };
+
+  const openEditGroup = () => {
+    setGroupModalGroup(selectedGroup);
+    setIsGroupModalOpen(true);
+  };
+
+  const handleTaskCreated = (newTask) => {
+    if (!newTask) {
+      fetchTasks(selectedGroup);
+      return;
+    }
+    setTasks((prev) => [...prev, newTask]);
+  };
+
+  const handleMoveTask = async (taskId, newStatus) => {
+    try {
+      setActionError(null);
+      const result = await updateTask(taskId, { status: newStatus });
+      const updatedTask = result?.data || result?.task || result;
+      setTasks((prev) => prev.map((task) => {
+        const id = task.task_id || task.id;
+        if (id === taskId) {
+          return { ...task, ...updatedTask };
+        }
+        return task;
+      }));
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to update task status.');
+    }
+  };
 
   const groupName = selectedGroup?.group_name || selectedGroup?.name || '';
 
@@ -116,7 +182,7 @@ export default function GroupWorkspacePage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4 flex-wrap">
           <div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Group Workspace</h2>
@@ -126,12 +192,23 @@ export default function GroupWorkspacePage() {
           </div>
           <CreateGroupButton onGroupCreated={handleGroupCreated} />
         </div>
-        {selectedGroup && (
-          <Button disabled>
-            <Plus className="w-4 h-4" />
-            Add Task
-          </Button>
-        )}
+
+        <div className="flex flex-wrap gap-2 items-center">
+          {selectedGroup && (
+            <>
+              <Button variant="outline" onClick={() => setIsTaskModalOpen(true)}>
+                <Plus className="w-4 h-4" />
+                Add Task
+              </Button>
+              <Button variant="secondary" onClick={openEditGroup}>
+                Edit Group
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteGroup}>
+                Delete Group
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Group selector */}
@@ -168,9 +245,9 @@ export default function GroupWorkspacePage() {
       )}
 
       {/* Error */}
-      {error && (
+      {(error || actionError) && (
         <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
-          {error}
+          {error || actionError}
         </div>
       )}
 
@@ -245,7 +322,7 @@ export default function GroupWorkspacePage() {
                         );
                       })}
 
-                      <button className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-blue-400 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 text-sm transition-all">
+                      <button onClick={() => setIsTaskModalOpen(true)} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-blue-400 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 text-sm transition-all">
                         <Plus className="w-4 h-4" />
                         Add a task
                       </button>
@@ -257,6 +334,28 @@ export default function GroupWorkspacePage() {
           )}
         </>
       )}
+
+      <CreateGroupModal
+        isOpen={isGroupModalOpen}
+        onClose={(groupData) => {
+          setIsGroupModalOpen(false);
+          if (groupData) {
+            handleGroupUpdated();
+          }
+        }}
+        group={groupModalGroup}
+      />
+
+      <AddTaskModal
+        isOpen={isTaskModalOpen}
+        onClose={(taskData) => {
+          setIsTaskModalOpen(false);
+          if (taskData) {
+            handleTaskCreated(taskData);
+          }
+        }}
+        groupId={selectedGroup?.group_id || selectedGroup?.id}
+      />
     </div>
   );
 }

@@ -86,4 +86,71 @@ async function createGroup(req, res) {
   }
 }
 
-module.exports = { getGroups, createGroup };
+// PUT /api/groups/:groupId
+async function updateGroup(req, res) {
+  const { groupId } = req.params;
+  const { name, description, status } = req.body;
+  const userId = req.user.user_id;
+
+  if (!groupId) {
+    return res.status(400).json({ success: false, error: 'Group ID is required.' });
+  }
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, error: 'Group name is required.' });
+  }
+
+  try {
+    const groupResult = await pool.query(
+      `UPDATE groups
+       SET group_name = $1, description = $2, status = COALESCE($3, status)
+       WHERE group_id = $4
+       AND EXISTS (
+         SELECT 1 FROM memberships WHERE group_id = $4 AND user_id = $5
+       )
+       RETURNING *`,
+      [name.trim(), description?.trim() || '', status || null, groupId, userId]
+    );
+
+    if (groupResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Group not found or access denied.' });
+    }
+
+    return res.json({ success: true, data: { group: groupResult.rows[0] } });
+  } catch (err) {
+    console.error('[updateGroup]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to update group.' });
+  }
+}
+
+// DELETE /api/groups/:groupId
+async function deleteGroup(req, res) {
+  const { groupId } = req.params;
+  const userId = req.user.user_id;
+
+  if (!groupId) {
+    return res.status(400).json({ success: false, error: 'Group ID is required.' });
+  }
+
+  try {
+    const deleteResult = await pool.query(
+      `DELETE FROM groups
+       WHERE group_id = $1
+       AND EXISTS (
+         SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2
+       )`,
+      [groupId, userId]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Group not found or access denied.' });
+    }
+
+    return res.json({ success: true, data: { message: 'Group deleted successfully.' } });
+  } catch (err) {
+    console.error('[deleteGroup]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to delete group.' });
+  }
+}
+
+module.exports = { getGroups, createGroup, updateGroup, deleteGroup };
