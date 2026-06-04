@@ -2,35 +2,31 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getMe } from '@/services/authService';
+import { useAuth } from '@/context/AuthContext';
 import Sidebar from '@/components/layout/Sidebar';
 import Topbar from '@/components/layout/Topbar';
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const { loading, isAuthenticated } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    async function checkAuth() {
-      try {
-        await getMe();
-      } catch (error) {
-        router.push('/login');
-      } finally {
-        setCheckingAuth(false);
-      }
+    if (!loading && !isAuthenticated) {
+      router.push('/login');
     }
+  }, [loading, isAuthenticated, router]);
 
-    checkAuth();
-  }, [router]);
-
-  if (checkingAuth) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center text-slate-500 dark:text-slate-400">
         Checking authentication...
       </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    return null;
   }
 
   return (

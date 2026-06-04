@@ -1,25 +1,10 @@
-const express = require("express");
+const express = require('express');
+const { getCharter, signCharter } = require('../controllers/charterController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.get("/", (req, res) => {
-  res.json({
-    message: "Charter routes working",
-    sampleCharters: [
-      {
-        id: 1,
-        member: "Jashandeep",
-        status: "Accepted",
-        is_signed: true,
-      },
-      {
-        id: 2,
-        member: "Dilraj",
-        status: "Pending",
-        is_signed: false,
-      },
-    ],
-  });
-});
+router.get('/', authMiddleware, getCharter);
+router.post('/sign', authMiddleware, signCharter);
 
 module.exports = router;

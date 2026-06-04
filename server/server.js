@@ -3,12 +3,13 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 
-const authRoutes = require("./routes/authRoutes");
-const groupRoutes = require("./routes/groupRoutes");
-const taskRoutes = require("./routes/taskRoutes");
-const aiRoutes = require("./routes/aiRoutes");
-const charterRoutes = require("./routes/charterRoutes");
-const notificationRoutes = require("./routes/notificationRoutes");
+const authRoutes = require('./routes/authRoutes');
+const groupRoutes = require('./routes/groupRoutes');
+const taskRoutes = require('./routes/taskRoutes');
+const aiRoutes = require('./routes/aiRoutes');
+const charterRoutes = require('./routes/charterRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const contributionRoutes = require('./routes/contributionRoutes');
 
 dotenv.config();
 
@@ -40,12 +41,13 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.use("/api/auth", authRoutes);
-app.use("/api/groups", groupRoutes);
-app.use("/api/tasks", taskRoutes);
-app.use("/api/ai", aiRoutes);
-app.use("/api/charters", charterRoutes);
-app.use("/api/notifications", notificationRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/groups', groupRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/charters', charterRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/contributions', contributionRoutes);
 
 const PORT = process.env.PORT || 5000;
 
