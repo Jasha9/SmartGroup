@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
@@ -8,7 +8,7 @@ import api from '@/services/api';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function CreateGroupModal({ isOpen, onClose }) {
+export default function CreateGroupModal({ isOpen, onClose, group = null }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [nameError, setNameError] = useState('');
@@ -20,6 +20,30 @@ export default function CreateGroupModal({ isOpen, onClose }) {
   const [emailInput, setEmailInput] = useState('');
   const [emailError, setEmailError] = useState('');
   const emailInputRef = useRef(null);
+
+  const isEdit = Boolean(group && (group.group_id || group.id));
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (isEdit) {
+      setName(group.group_name || group.name || '');
+      setDescription(group.description || '');
+      setMemberEmails([]);
+      setEmailInput('');
+      setEmailError('');
+      setNameError('');
+      setApiError('');
+    } else {
+      setName('');
+      setDescription('');
+      setMemberEmails([]);
+      setEmailInput('');
+      setEmailError('');
+      setNameError('');
+      setApiError('');
+    }
+  }, [group, isEdit, isOpen]);
 
   const addEmail = () => {
     const email = emailInput.trim().toLowerCase();
@@ -62,14 +86,19 @@ export default function CreateGroupModal({ isOpen, onClose }) {
     try {
       setLoading(true);
       setApiError('');
-      const response = await api.post('/groups', {
+      const payload = {
         name: name.trim(),
         description: description.trim(),
         memberEmails,
-      });
+      };
+
+      const response = isEdit
+        ? await api.put(`/groups/${group.group_id || group.id}`, payload)
+        : await api.post('/groups', payload);
+
       handleClose(response.data);
     } catch (err) {
-      setApiError(err.response?.data?.error || 'Failed to create group. Please try again.');
+      setApiError(err.response?.data?.error || `Failed to ${isEdit ? 'update' : 'create'} group. Please try again.`);
     } finally {
       setLoading(false);
     }
@@ -88,7 +117,7 @@ export default function CreateGroupModal({ isOpen, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Create a New Group">
+    <Modal isOpen={isOpen} onClose={handleClose} title={isEdit ? 'Edit Group' : 'Create a New Group'}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Group Name"
@@ -165,7 +194,7 @@ export default function CreateGroupModal({ isOpen, onClose }) {
             Cancel
           </Button>
           <Button type="submit" disabled={loading}>
-            {loading ? 'Creating…' : 'Create Group'}
+            {loading ? (isEdit ? 'Updating…' : 'Saving…') : isEdit ? 'Update Group' : 'Create Group'}
           </Button>
         </div>
 
