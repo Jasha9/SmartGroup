@@ -1,19 +1,10 @@
-const express = require("express");
+const express = require('express');
+const { getTasks, createTasks } = require('../controllers/taskController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.get("/", (req, res) => {
-  res.json({
-    message: "Task routes working",
-    sampleTasks: [
-      {
-        id: 1,
-        title: "Set up backend",
-        status: "TO_DO",
-        assigned_to: "Dilraj",
-      },
-    ],
-  });
-});
+router.get('/', authMiddleware, getTasks);
+router.post('/', authMiddleware, createTasks);
 
 module.exports = router;

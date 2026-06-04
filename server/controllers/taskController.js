@@ -1,0 +1,87 @@
+const pool = require('../db/db');
+
+// GET /api/tasks?groupId=<id>
+async function getTasks(req, res) {
+  const { groupId } = req.query;
+  if (!groupId) {
+    return res.status(400).json({ success: false, error: 'groupId is required.' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT t.task_id, t.group_id, t.title, t.description, t.status, t.priority,
+              t.effort_hours, t.is_signed, t.due_date, t.created_at,
+              u.full_name AS assigned_to_name, u.email AS assigned_to_email
+       FROM tasks t
+       LEFT JOIN users u ON t.assigned_to = u.user_id
+       WHERE t.group_id = $1
+       ORDER BY t.created_at ASC`,
+      [groupId]
+    );
+    return res.json({ success: true, data: { tasks: result.rows } });
+  } catch (err) {
+    console.error('[getTasks]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to fetch tasks.' });
+  }
+}
+
+// POST /api/tasks  — bulk save AI-generated tasks
+async function createTasks(req, res) {
+  const { groupId, groupName, tasks = [] } = req.body;
+  if (!groupId) {
+    return res.status(400).json({ success: false, error: 'groupId is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const saved = [];
+
+    for (const t of tasks) {
+      // Resolve assigned_to email → user_id (best-effort)
+      let assignedUserId = null;
+      if (t.assigned_to_email) {
+        const userRes = await client.query(
+          `SELECT user_id FROM users WHERE email = $1`,
+          [t.assigned_to_email.trim().toLowerCase()]
+        );
+        if (userRes.rows.length > 0) assignedUserId = userRes.rows[0].user_id;
+      }
+
+      const taskRes = await client.query(
+        `INSERT INTO tasks (group_id, title, description, priority, status, assigned_to, due_date)
+         VALUES ($1, $2, $3, $4, 'TO_DO', $5, $6)
+         RETURNING *`,
+        [
+          groupId,
+          t.title,
+          t.description || '',
+          (t.priority || 'MEDIUM').toUpperCase(),
+          assignedUserId,
+          t.due_date || null,
+        ]
+      );
+      const newTask = taskRes.rows[0];
+      saved.push(newTask);
+
+      // Notify assignee if resolved
+      if (assignedUserId) {
+        await client.query(
+          `INSERT INTO notifications (user_id, group_id, message, type, is_read)
+           VALUES ($1, $2, $3, 'TASK_ASSIGNED', false)`,
+          [assignedUserId, groupId, `You have been assigned: "${newTask.title}"`]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({ success: true, data: { saved: saved.length, tasks: saved } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[createTasks]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to save tasks.' });
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { getTasks, createTasks };

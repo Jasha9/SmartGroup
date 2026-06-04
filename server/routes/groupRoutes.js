@@ -1,18 +1,10 @@
-const express = require("express");
+const express = require('express');
+const { getGroups, createGroup } = require('../controllers/groupController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.get("/", (req, res) => {
-  res.json({
-    message: "Group routes working",
-    sampleGroups: [
-      {
-        id: 1,
-        name: "SmartGroup Capstone Team",
-        status: "ACTIVE",
-      },
-    ],
-  });
-});
+router.get('/', authMiddleware, getGroups);
+router.post('/', authMiddleware, createGroup);
 
 module.exports = router;

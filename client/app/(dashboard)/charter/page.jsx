@@ -1,58 +1,96 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { getGroups } from '@/services/groupService';
+import { getCharter, signCharter } from '@/services/charterService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import LoadingState from '@/components/ui/LoadingState';
 import { CheckCircle2, ArrowLeftRight, FileText, Shield } from 'lucide-react';
 
-const responsibilities = [
-  {
-    id: 1,
-    member: 'Alice Chen',
-    avatar: 'AC',
-    role: 'Lead Researcher',
-    tasks: ['Literature review', 'Methodology design', 'Academic sourcing'],
-    status: 'accepted',
-    isYou: false,
-  },
-  {
-    id: 2,
-    member: 'Bob Smith',
-    avatar: 'BS',
-    role: 'Data Analyst',
-    tasks: ['Survey design', 'Statistical analysis', 'Data visualisation'],
-    status: 'negotiating',
-    isYou: false,
-  },
-  {
-    id: 3,
-    member: 'Carol Davis',
-    avatar: 'CD',
-    role: 'Qualitative Analyst',
-    tasks: ['Interview coding', 'Thematic analysis', 'Ethics compliance'],
-    status: 'pending',
-    isYou: false,
-  },
-  {
-    id: 4,
-    member: 'John Smith (You)',
-    avatar: 'JS',
-    role: 'Project Lead',
-    tasks: ['Project coordination', 'Final report writing', 'Presentation lead'],
-    status: 'accepted',
-    isYou: true,
-  },
-];
-
-const statusConfig = {
+const STATUS_CONFIG = {
   accepted: { badge: 'accepted', label: 'Accepted' },
   pending: { badge: 'pending', label: 'Pending' },
   negotiating: { badge: 'negotiating', label: 'Negotiating' },
 };
 
-export default function CharterPage() {
-  const isLoading = false;
+function getInitials(name) {
+  if (!name) return '?';
+  return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+}
 
-  if (isLoading) {
+export default function CharterPage() {
+  const { user } = useAuth();
+  const [responsibilities, setResponsibilities] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [signing, setSigning] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchCharter = useCallback(async (group) => {
+    if (!group) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const groupId = group.group_id || group.id;
+      const data = await getCharter(groupId);
+      setResponsibilities(data?.data?.responsibilities || []);
+    } catch {
+      setError('Failed to load charter. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function init() {
+      try {
+        const data = await getGroups();
+        const list = data?.data?.groups || data?.groups || [];
+        if (list.length > 0) {
+          setSelectedGroup(list[0]);
+          fetchCharter(list[0]);
+        } else {
+          setLoading(false);
+        }
+      } catch {
+        setError('Failed to load groups.');
+        setLoading(false);
+      }
+    }
+    init();
+  }, [fetchCharter]);
+
+  const handleSign = async () => {
+    if (!selectedGroup) return;
+    setSigning(true);
+    try {
+      const groupId = selectedGroup.group_id || selectedGroup.id;
+      await signCharter(groupId);
+      await fetchCharter(selectedGroup);
+    } catch {
+      setError('Failed to sign charter. Please try again.');
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  // Derived stats
+  const accepted = responsibilities.filter((r) => r.status === 'accepted' || r.is_signed).length;
+  const total = responsibilities.length;
+  const swapRequests = responsibilities.filter((r) => r.status === 'negotiating').length;
+  const completionPct = total > 0 ? Math.round((accepted / total) * 100) : 0;
+
+  // Current user's entry
+  const myEntry = user
+    ? responsibilities.find(
+        (r) => r.user_id === user.user_id || r.email === user.email
+      )
+    : null;
+
+  if (loading) {
     return (
       <div className="max-w-5xl mx-auto mt-6">
         <LoadingState message="Loading charter information..." />
@@ -75,102 +113,129 @@ export default function CharterPage() {
         </Button>
       </div>
 
-      {/* Summary row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">2 / 4</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Members accepted</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-900/20">
-                <ArrowLeftRight className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">1</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Swap requests</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20">
-                <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">50%</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Charter complete</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {error && (
+        <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
+          {error}
+        </div>
+      )}
 
-      {/* Responsibility cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {responsibilities.map(({ id, member, avatar, role, tasks, status, isYou }) => (
-          <Card
-            key={id}
-            className={isYou ? 'ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-950' : ''}
-          >
-            <CardHeader>
-              <div className="flex items-start justify-between">
+      {/* Empty state */}
+      {!error && responsibilities.length === 0 && (
+        <Card>
+          <div className="py-16 text-center text-slate-500 dark:text-slate-400">
+            <p className="text-lg font-medium">No charter responsibilities yet</p>
+            <p className="text-sm mt-1">Generate or assign tasks first to populate the charter.</p>
+          </div>
+        </Card>
+      )}
+
+      {responsibilities.length > 0 && (
+        <>
+          {/* Summary row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-semibold">
-                    {avatar}
+                  <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">{member}</CardTitle>
-                    <CardDescription>{role}</CardDescription>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{accepted} / {total}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Members accepted</p>
                   </div>
                 </div>
-                <Badge variant={statusConfig[status].badge}>{statusConfig[status].label}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-1.5 mb-4">
-                {tasks.map((task) => (
-                  <li key={task} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
-                    {task}
-                  </li>
-                ))}
-              </ul>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-900/20">
+                    <ArrowLeftRight className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{swapRequests}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Swap requests</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20">
+                    <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{completionPct}%</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Charter complete</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-              {isYou && status !== 'accepted' && (
-                <div className="flex gap-2">
-                  <Button size="sm" className="flex-1">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Accept Responsibility
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <ArrowLeftRight className="w-4 h-4" />
-                    Request Swap
-                  </Button>
-                </div>
-              )}
-              {isYou && status === 'accepted' && (
-                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  You&apos;ve accepted these responsibilities
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+          {/* Responsibility cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {responsibilities.map((r) => {
+              const isYou = user && (r.user_id === user.user_id || r.email === user.email);
+              const status = r.is_signed ? 'accepted' : (r.status || 'pending');
+              const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
+              const initials = getInitials(r.full_name);
+
+              return (
+                <Card
+                  key={r.charter_id}
+                  className={isYou ? 'ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-950' : ''}
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-semibold">
+                          {initials}
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">
+                            {r.full_name || r.email}{isYou ? ' (You)' : ''}
+                          </CardTitle>
+                          <CardDescription>{r.task_title}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={statusCfg.badge}>{statusCfg.label}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {r.task_description && (
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        {r.task_description}
+                      </p>
+                    )}
+
+                    {isYou && !r.is_signed && (
+                      <div className="flex gap-2">
+                        <Button size="sm" className="flex-1" onClick={handleSign} disabled={signing}>
+                          <CheckCircle2 className="w-4 h-4" />
+                          {signing ? 'Signing...' : 'Accept Responsibility'}
+                        </Button>
+                        <Button variant="outline" size="sm">
+                          <ArrowLeftRight className="w-4 h-4" />
+                          Request Swap
+                        </Button>
+                      </div>
+                    )}
+                    {isYou && r.is_signed && (
+                      <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        You&apos;ve accepted these responsibilities
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
