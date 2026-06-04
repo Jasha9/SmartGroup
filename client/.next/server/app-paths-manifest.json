@@ -1,7 +1,0 @@
-{
-  "/(auth)/login/page": "app/(auth)/login/page.js",
-  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
-  "/(dashboard)/workspace/page": "app/(dashboard)/workspace/page.js",
-  "/(dashboard)/charter/page": "app/(dashboard)/charter/page.js",
-  "/(dashboard)/ai-planner/page": "app/(dashboard)/ai-planner/page.js"
-}
