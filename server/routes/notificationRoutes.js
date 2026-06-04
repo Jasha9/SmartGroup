@@ -1,19 +1,10 @@
-const express = require("express");
+const express = require('express');
+const { getNotifications, markRead } = require('../controllers/notificationController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.get("/", (req, res) => {
-  res.json({
-    message: "Notification routes working",
-    notifications: [
-      {
-        id: 1,
-        message: "Khushi moved a task to In Progress",
-        type: "TASK_UPDATE",
-        is_read: false,
-      },
-    ],
-  });
-});
+router.get('/', authMiddleware, getNotifications);
+router.patch('/:id/read', authMiddleware, markRead);
 
 module.exports = router;

@@ -95,12 +95,19 @@ async function googleLogin(req, res) {
 }
 
 async function getMe(req, res) {
-  return res.status(200).json({
-    success: true,
-    data: {
-      user: req.user,
-    },
-  });
+  try {
+    const result = await pool.query(
+      `SELECT user_id, email, full_name, role, is_onboarded, created_at FROM users WHERE user_id = $1`,
+      [req.user.user_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+    return res.status(200).json({ success: true, data: { user: result.rows[0] } });
+  } catch (error) {
+    console.error('getMe error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch user.' });
+  }
 }
 
 async function logout(req, res) {
@@ -112,8 +119,31 @@ async function logout(req, res) {
   });
 }
 
+async function updateProfile(req, res) {
+  try {
+    const userId = req.user.user_id;
+    const { full_name } = req.body;
+    if (!full_name || !full_name.trim()) {
+      return res.status(400).json({ success: false, error: 'Display name is required.' });
+    }
+    const result = await pool.query(
+      `UPDATE users SET full_name = $1 WHERE user_id = $2
+       RETURNING user_id, email, full_name, role, is_onboarded`,
+      [full_name.trim(), userId]
+    );
+    const user = result.rows[0];
+    const token = createToken(user);
+    setAuthCookie(res, token);
+    return res.status(200).json({ success: true, data: { user } });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update profile.' });
+  }
+}
+
 module.exports = {
   googleLogin,
   getMe,
   logout,
+  updateProfile,
 };

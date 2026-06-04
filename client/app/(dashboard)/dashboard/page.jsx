@@ -6,8 +6,10 @@ import Progress from '@/components/ui/Progress';
 import LoadingState from '@/components/ui/LoadingState';
 import { TrendingUp, CheckCircle2, FileSignature, Bell } from 'lucide-react';
 import api from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     progress: 0,
@@ -134,7 +136,7 @@ export default function DashboardPage() {
       {/* Welcome */}
       <div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Welcome back 👋
+          Welcome back, {user?.full_name || user?.email || 'there'} 👋
         </h2>
         <p className="text-slate-500 dark:text-slate-400 mt-1">
           {groupName ? `Active group: ${groupName}` : "Here's what's happening with your group project today."}

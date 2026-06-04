@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import {
   LayoutDashboard,
   Brain,
@@ -26,6 +27,17 @@ const navItems = [
 
 export default function Sidebar({ isOpen, onClose }) {
   const pathname = usePathname();
+  const { user, logoutUser } = useAuth();
+
+  const displayName = user?.full_name || user?.email || 'Loading...';
+  const initials = user?.full_name
+    ? user.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+    : user?.email
+    ? user.email[0].toUpperCase()
+    : '?';
+  const role = user?.role
+    ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase()
+    : 'Student';
 
   return (
     <>
@@ -93,15 +105,21 @@ export default function Sidebar({ isOpen, onClose }) {
         <div className="px-4 py-4 border-t border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-              JS
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                John Smith
+                {displayName}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Student</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{role}</p>
             </div>
           </div>
+          <button
+            onClick={logoutUser}
+            className="mt-1 w-full text-left px-2 py-1.5 rounded-lg text-xs text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            Sign out
+          </button>
         </div>
       </aside>
     </>

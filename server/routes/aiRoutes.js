@@ -1,5 +1,6 @@
 const express = require("express");
 const OpenAI = require("openai");
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -8,7 +9,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // POST /api/ai/generate-tasks
 // Body: { groupId, promptText }
 // Returns: { tasks: [...], usage: <number> }
-router.post("/generate-tasks", async (req, res) => {
+router.post("/generate-tasks", authMiddleware, async (req, res) => {
   const { groupId, promptText } = req.body;
 
   if (!groupId) {

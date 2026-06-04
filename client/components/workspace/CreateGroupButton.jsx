@@ -5,8 +5,13 @@ import { Plus } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import CreateGroupModal from '@/components/workspace/CreateGroupModal';
 
-export default function CreateGroupButton() {
+export default function CreateGroupButton({ onGroupCreated }) {
   const [isOpen, setIsOpen] = useState(false);
+
+  const handleClose = (groupData) => {
+    setIsOpen(false);
+    if (groupData && onGroupCreated) onGroupCreated(groupData);
+  };
 
   return (
     <>
@@ -14,7 +19,7 @@ export default function CreateGroupButton() {
         <Plus className="w-4 h-4" />
         Create Group
       </Button>
-      <CreateGroupModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+      <CreateGroupModal isOpen={isOpen} onClose={handleClose} />
     </>
   );
 }
