@@ -5,6 +5,11 @@ export async function getGroups() {
   return response.data;
 }
 
+export async function getGroupMembers(groupId) {
+  const response = await api.get(`/groups/${groupId}/members`);
+  return response.data;
+}
+
 export async function createGroup(data) {
   const response = await api.post('/groups', data);
   return response.data;

@@ -153,4 +153,32 @@ async function deleteGroup(req, res) {
   }
 }
 
-module.exports = { getGroups, createGroup, updateGroup, deleteGroup };
+// GET /api/groups/:groupId/members
+async function getGroupMembers(req, res) {
+  const { groupId } = req.params;
+  const userId = req.user.user_id;
+
+  try {
+    // Only return members if the caller is also a member of the group
+    const result = await pool.query(
+      `SELECT u.user_id, u.full_name, u.email, m.role
+       FROM memberships m
+       JOIN users u ON m.user_id = u.user_id
+       WHERE m.group_id = $1
+         AND EXISTS (SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2)
+       ORDER BY u.full_name ASC`,
+      [groupId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Group not found or access denied.' });
+    }
+
+    return res.json({ success: true, data: { members: result.rows } });
+  } catch (err) {
+    console.error('[getGroupMembers]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to fetch group members.' });
+  }
+}
+
+module.exports = { getGroups, createGroup, updateGroup, deleteGroup, getGroupMembers };
