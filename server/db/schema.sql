@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS groups (
   group_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   group_name VARCHAR(255) NOT NULL,
+  description TEXT,
   status VARCHAR(50) DEFAULT 'PENDING',
   created_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

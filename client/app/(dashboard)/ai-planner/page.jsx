@@ -46,14 +46,13 @@ export default function AIPlannerPage() {
   };
 
   const handleGenerateTasks = async () => {
-    if (!selectedGroupId) return;
     try {
       setLoading(true);
       setError('');
       setSaveSuccess(false);
-      const data = await generateTasks(selectedGroupId, inputMode === 'text' ? promptText : '');
-      setGeneratedTasks(data.tasks || []);
-      setUsage(data.usage ?? usage);
+      const data = await generateTasks(promptText);
+      const rawTasks = data.data?.tasks || data.tasks || [];
+      setGeneratedTasks(rawTasks.map((t, i) => ({ ...t, id: i })));
     } catch (err) {
       setError(err.message || 'Failed to generate tasks. Please check if the backend is running.');
     } finally {
@@ -82,7 +81,7 @@ export default function AIPlannerPage() {
     }
   };
 
-  const canGenerate = selectedGroupId && (inputMode === 'upload' ? uploadedFile : promptText.trim().length > 0);
+  const canGenerate = inputMode === 'upload' ? !!uploadedFile : promptText.trim().length > 0;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -253,6 +252,12 @@ export default function AIPlannerPage() {
       )}
 
       {/* AI-returned task preview */}
+      {generatedTasks.length === 0 && !loading && (
+        <div className="flex items-center justify-center p-10 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 text-sm">
+          No tasks generated yet. Enter assignment details to begin.
+        </div>
+      )}
+
       {generatedTasks.length > 0 && (
         <Card>
           <CardHeader>
@@ -286,7 +291,7 @@ export default function AIPlannerPage() {
                         {task.title}
                       </p>
                       {task.priority && (
-                        <Badge variant={task.priority === 'High' ? 'destructive' : 'default'}>
+                        <Badge variant={task.priority === 'HIGH' ? 'destructive' : 'default'}>
                           {task.priority}
                         </Badge>
                       )}
@@ -296,9 +301,9 @@ export default function AIPlannerPage() {
                         {task.description}
                       </p>
                     )}
-                    {task.effort_hours && (
+                    {task.estimated_hours && (
                       <p className="text-xs text-slate-400 dark:text-slate-500">
-                        Estimated: {task.effort_hours}h
+                        Estimated: {task.estimated_hours}h
                       </p>
                     )}
                   </div>
