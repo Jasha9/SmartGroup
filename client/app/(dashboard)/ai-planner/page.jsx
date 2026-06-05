@@ -1,77 +1,132 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { generateTasks, getGroups, saveTasks } from '@/services/aiService';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { useEffect, useState } from 'react';
+import { generateTasks, saveAssignedTasks } from '@/services/aiService';
+import { getGroups, getGroupMembers } from '@/services/groupService';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
-import { Upload, Sparkles, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Sparkles, Upload, Users } from 'lucide-react';
 
 export default function AIPlannerPage() {
-  const [inputMode, setInputMode] = useState('text'); // 'text' | 'upload'
+  const [inputMode, setInputMode] = useState('text');
   const [promptText, setPromptText] = useState('');
   const [uploadedFile, setUploadedFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [generatedTasks, setGeneratedTasks] = useState([]);
-  const [error, setError] = useState('');
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [groupsLoading, setGroupsLoading] = useState(true);
 
-  const [usage, setUsage] = useState(0);
-  const USAGE_MAX = 3;
+  const [members, setMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+
+  const [generatedTasks, setGeneratedTasks] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     const fetchGroups = async () => {
       try {
         const data = await getGroups();
-        const list = Array.isArray(data) ? data : (data.groups || data.sampleGroups || []);
+        const list = data?.data?.groups || data?.groups || (Array.isArray(data) ? data : []);
         setGroups(list);
-        if (list.length > 0) setSelectedGroupId(list[0].group_id || list[0].id || '');
+        if (list.length > 0) {
+          setSelectedGroupId(String(list[0].group_id || list[0].id || ''));
+        }
       } catch {
-        // groups will remain empty; user sees empty dropdown
+        setGroups([]);
       } finally {
         setGroupsLoading(false);
       }
     };
+
     fetchGroups();
   }, []);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) setUploadedFile(file);
-  };
+  useEffect(() => {
+    if (!selectedGroupId) {
+      setMembers([]);
+      return;
+    }
+
+    const fetchMembers = async () => {
+      try {
+        setMembersLoading(true);
+        const data = await getGroupMembers(selectedGroupId);
+        setMembers(data?.data?.members || []);
+      } catch {
+        setMembers([]);
+      } finally {
+        setMembersLoading(false);
+      }
+    };
+
+    fetchMembers();
+  }, [selectedGroupId]);
 
   const handleGenerateTasks = async () => {
     try {
       setLoading(true);
       setError('');
       setSaveSuccess(false);
+
       const data = await generateTasks(promptText);
-      const rawTasks = data.data?.tasks || data.tasks || [];
-      setGeneratedTasks(rawTasks.map((t, i) => ({ ...t, id: i })));
+      const rawTasks = data?.data?.tasks || [];
+      setGeneratedTasks(
+        rawTasks.map((task, i) => ({
+          id: i,
+          title: task.title || '',
+          description: task.description || '',
+          priority: task.priority || 'MEDIUM',
+          estimated_hours: task.estimated_hours || 1,
+          status: 'TO_DO',
+          assigned_to_email: '',
+        }))
+      );
     } catch (err) {
-      setError(err.message || 'Failed to generate tasks. Please check if the backend is running.');
+      setError(err.message || 'Failed to generate tasks. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleAccept = (id) =>
-    setGeneratedTasks((prev) => prev.map((t) => (t.id === id ? { ...t, accepted: !t.accepted } : t)));
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setUploadedFile(file);
+  };
 
-  const removeTask = (id) => setGeneratedTasks((prev) => prev.filter((t) => t.id !== id));
+  const updateTaskTitle = (id, title) => {
+    setGeneratedTasks((prev) => prev.map((task) => (task.id === id ? { ...task, title } : task)));
+  };
 
-  const handleSaveAccepted = async () => {
-    const accepted = generatedTasks.filter((t) => t.accepted);
-    if (!accepted.length) return;
+  const assignTask = (id, assigned_to_email) => {
+    setGeneratedTasks((prev) =>
+      prev.map((task) => (task.id === id ? { ...task, assigned_to_email } : task))
+    );
+  };
+
+  const handleSaveAssignedTasks = async () => {
+    if (!selectedGroupId) {
+      setError('Please select a group before saving.');
+      return;
+    }
+
+    if (generatedTasks.some((task) => !task.title.trim())) {
+      setError('Task title cannot be empty.');
+      return;
+    }
+
+    if (generatedTasks.some((task) => !task.assigned_to_email)) {
+      setError('Please assign all tasks before saving.');
+      return;
+    }
+
     try {
       setSaving(true);
       setError('');
-      await saveTasks(selectedGroupId, accepted);
+      await saveAssignedTasks(selectedGroupId, generatedTasks);
       setSaveSuccess(true);
       setGeneratedTasks([]);
     } catch (err) {
@@ -84,26 +139,27 @@ export default function AIPlannerPage() {
   const canGenerate = inputMode === 'upload' ? !!uploadedFile : promptText.trim().length > 0;
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">AI Planner</h2>
         <p className="text-slate-500 dark:text-slate-400 mt-1">
-          Upload your assignment brief and let AI generate a task plan.
+          Select group, generate tasks, assign members, and save in one flow.
         </p>
       </div>
 
-      {/* Group selector */}
       <div className="space-y-1.5">
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Select Group
-        </label>
+        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Select Group</label>
         <select
           value={selectedGroupId}
-          onChange={(e) => setSelectedGroupId(e.target.value)}
+          onChange={(e) => {
+            setSelectedGroupId(e.target.value);
+            setGeneratedTasks([]);
+            setSaveSuccess(false);
+          }}
           disabled={groupsLoading}
           className="w-full max-w-sm px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
         >
-          {groupsLoading && <option>Loading groups…</option>}
+          {groupsLoading && <option>Loading groups...</option>}
           {!groupsLoading && groups.length === 0 && <option value="">No groups found</option>}
           {groups.map((g) => (
             <option key={g.group_id || g.id} value={g.group_id || g.id}>
@@ -111,129 +167,96 @@ export default function AIPlannerPage() {
             </option>
           ))}
         </select>
+        {!!selectedGroupId && !membersLoading && members.length > 0 && (
+          <p className="text-xs text-slate-400 flex items-center gap-1">
+            <Users className="w-3 h-3" /> {members.length} member{members.length === 1 ? '' : 's'} in this group
+          </p>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Input card */}
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Assignment Brief</CardTitle>
-            <CardDescription>Paste your brief or upload a PDF</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Mode toggle */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setInputMode('text')}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                  inputMode === 'text'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                Paste Text
-              </button>
-              <button
-                onClick={() => setInputMode('upload')}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                  inputMode === 'upload'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                Upload PDF
-              </button>
-            </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Assignment Brief</CardTitle>
+          <CardDescription>Paste assignment text or upload a PDF</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setInputMode('text')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                inputMode === 'text'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              Paste Text
+            </button>
+            <button
+              onClick={() => setInputMode('upload')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                inputMode === 'upload'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              Upload PDF
+            </button>
+          </div>
 
-            {inputMode === 'text' ? (
-              <textarea
-                rows={7}
-                placeholder="Paste your assignment brief here…"
-                value={promptText}
-                onChange={(e) => setPromptText(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
-              />
-            ) : (
-              <label className={`block w-full border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+          {inputMode === 'text' ? (
+            <textarea
+              rows={7}
+              placeholder="Paste your assignment brief here..."
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+            />
+          ) : (
+            <label
+              className={`block w-full border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
                 uploadedFile
                   ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/10'
                   : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600 hover:bg-blue-50/50 dark:hover:bg-blue-900/10'
-              }`}>
-                <input type="file" accept=".pdf" className="sr-only" onChange={handleFileChange} />
-                {uploadedFile ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <CheckCircle2 className="w-10 h-10 text-emerald-500" />
-                    <p className="font-medium text-emerald-700 dark:text-emerald-400">{uploadedFile.name}</p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-500">Click to replace</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <Upload className="w-10 h-10 text-slate-400" />
-                    <p className="font-medium text-slate-600 dark:text-slate-300">Click to upload PDF</p>
-                    <p className="text-xs text-slate-400">Max 10 MB</p>
-                  </div>
-                )}
-              </label>
-            )}
-
-            <Button onClick={handleGenerateTasks} disabled={!canGenerate || loading} className="w-full">
-              {loading ? (
-                <><Sparkles className="w-4 h-4 animate-pulse" /> Generating…</>
-              ) : (
-                <><Sparkles className="w-4 h-4" /> Generate Tasks with AI</>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Usage quota */}
-        <Card>
-          <CardHeader>
-            <CardTitle>AI Usage</CardTitle>
-            <CardDescription>Daily quota (per group)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-2">
-              <div className="relative w-24 h-24 mx-auto mb-3">
-                <svg className="w-24 h-24 -rotate-90" viewBox="0 0 96 96">
-                  <circle cx="48" cy="48" r="40" fill="none" stroke="currentColor" strokeWidth="8" className="text-slate-100 dark:text-slate-800" />
-                  <circle
-                    cx="48" cy="48" r="40" fill="none" strokeWidth="8"
-                    stroke="url(#usageGrad)"
-                    strokeDasharray={`${(usage / USAGE_MAX) * 251.2} 251.2`}
-                    strokeLinecap="round"
-                  />
-                  <defs>
-                    <linearGradient id="usageGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#2563eb" />
-                      <stop offset="100%" stopColor="#7c3aed" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-2xl font-bold text-slate-900 dark:text-slate-100">{usage}</span>
-                  <span className="text-xs text-slate-400">/ {USAGE_MAX}</span>
+              }`}
+            >
+              <input type="file" accept=".pdf" className="sr-only" onChange={handleFileChange} />
+              {uploadedFile ? (
+                <div className="flex flex-col items-center gap-2">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+                  <p className="font-medium text-emerald-700 dark:text-emerald-400">{uploadedFile.name}</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-500">Click to replace</p>
                 </div>
-              </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {USAGE_MAX - usage} generation{USAGE_MAX - usage !== 1 ? 's' : ''} remaining
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Resets every 24 hours</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <Upload className="w-10 h-10 text-slate-400" />
+                  <p className="font-medium text-slate-600 dark:text-slate-300">Click to upload PDF</p>
+                  <p className="text-xs text-slate-400">Max 10 MB</p>
+                </div>
+              )}
+            </label>
+          )}
 
-      {/* Human-in-the-loop notice */}
+          <Button onClick={handleGenerateTasks} disabled={!canGenerate || loading} className="w-full">
+            {loading ? (
+              <>
+                <Sparkles className="w-4 h-4 animate-pulse mr-2" /> Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 mr-2" /> Generate Tasks with AI
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
         <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
         <p className="text-sm text-amber-800 dark:text-amber-300">
-          <span className="font-semibold">Human review required.</span> AI suggestions must be
-          reviewed and accepted before saving to the Group Workspace.
+          Assign every task to a member before saving. Notifications are triggered automatically.
         </p>
       </div>
 
-      {/* Error message */}
       {error && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
           <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
@@ -241,17 +264,15 @@ export default function AIPlannerPage() {
         </div>
       )}
 
-      {/* Save success */}
       {saveSuccess && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-emerald-800 dark:text-emerald-300">
-            Tasks saved to the Group Workspace successfully.
+            Tasks assigned successfully. Team members have been notified.
           </p>
         </div>
       )}
 
-      {/* AI-returned task preview */}
       {generatedTasks.length === 0 && !loading && (
         <div className="flex items-center justify-center p-10 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 text-sm">
           No tasks generated yet. Enter assignment details to begin.
@@ -261,67 +282,69 @@ export default function AIPlannerPage() {
       {generatedTasks.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <CardTitle>AI-Generated Task Plan</CardTitle>
-                <CardDescription>Review each task before saving to workspace</CardDescription>
+                <CardTitle>Generated Tasks</CardTitle>
+                <CardDescription>Review and assign each task</CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSaveAccepted}
-                disabled={saving || !generatedTasks.some((t) => t.accepted)}
-              >
-                {saving ? 'Saving…' : 'Save Accepted'}
+                <Button onClick={handleSaveAssignedTasks} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Assigned Tasks'}
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {generatedTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={`flex items-start gap-4 px-6 py-4 transition-colors ${
-                    task.accepted ? 'bg-emerald-50 dark:bg-emerald-900/10' : ''
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start gap-2 mb-1 flex-wrap">
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {task.title}
-                      </p>
-                      {task.priority && (
-                        <Badge variant={task.priority === 'HIGH' ? 'destructive' : 'default'}>
-                          {task.priority}
-                        </Badge>
-                      )}
-                    </div>
-                    {task.description && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
-                        {task.description}
-                      </p>
-                    )}
-                    {task.estimated_hours && (
-                      <p className="text-xs text-slate-400 dark:text-slate-500">
-                        Estimated: {task.estimated_hours}h
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <Button variant="outline" size="sm" onClick={() => toggleAccept(task.id)}>
-                      {task.accepted ? 'Undo' : 'Accept'}
-                    </Button>
-                    <button
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                      onClick={() => removeTask(task.id)}
-                      aria-label="Remove task"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-left">
+                  <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 w-1/4">Task</th>
+                  <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 hidden md:table-cell">Description</th>
+                  <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 w-24">Priority</th>
+                  <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 w-24">Estimated Hours</th>
+                  <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 w-52">Assign To</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {generatedTasks.map((task) => (
+                  <tr key={task.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="px-4 py-3">
+                      <input
+                        value={task.title}
+                        onChange={(e) => updateTaskTitle(task.id, e.target.value)}
+                        className="w-full bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-blue-500 focus:outline-none text-slate-900 dark:text-slate-100 text-sm py-0.5"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400 hidden md:table-cell text-xs">
+                      {task.description}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={task.priority === 'HIGH' ? 'destructive' : task.priority === 'LOW' ? 'default' : 'warning'}>
+                        {task.priority}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{task.estimated_hours}h</td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={task.assigned_to_email}
+                        onChange={(e) => assignTask(task.id, e.target.value)}
+                        className={`w-full px-2 py-1.5 rounded-lg border text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          task.assigned_to_email
+                            ? 'border-slate-200 dark:border-slate-700'
+                            : 'border-amber-300 dark:border-amber-700'
+                        }`}
+                      >
+                        <option value="">- Assign member -</option>
+                        {membersLoading && <option disabled>Loading...</option>}
+                        {members.map((m) => (
+                          <option key={m.user_id} value={m.email}>
+                            {m.full_name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </CardContent>
         </Card>
       )}

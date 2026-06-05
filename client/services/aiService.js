@@ -18,6 +18,15 @@ export async function generateTasks(assignmentText) {
   }
 }
 
+export async function saveAssignedTasks(groupId, tasks) {
+  try {
+    const response = await api.post("/tasks/bulk", { groupId, tasks });
+    return response.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.error || "Failed to save tasks.");
+  }
+}
+
 export async function saveTasks(groupId, tasks) {
   try {
     const response = await api.post("/tasks", { groupId, tasks });
