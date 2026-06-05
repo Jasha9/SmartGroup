@@ -4,7 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-router.get('/', authMiddleware, getCharter);
+router.get('/:groupId', authMiddleware, getCharter);
 router.post('/sign', authMiddleware, signCharter);
 router.post('/accept', authMiddleware, acceptCharter);
 router.post('/negotiate', authMiddleware, negotiateCharter);
