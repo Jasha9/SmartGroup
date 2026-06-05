@@ -197,8 +197,8 @@ export default function CharterPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {responsibilities.map((r) => {
               const isYou = user && (r.user_id === user.user_id || r.email === user.email);
-              const status = r.is_signed ? 'accepted' : (r.status || 'pending');
-              const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
+              const statusKey = (r.is_signed ? 'ACCEPTED' : (r.status || 'PENDING')).toUpperCase();
+              const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.PENDING;
               const initials = getInitials(r.full_name);
 
               return (

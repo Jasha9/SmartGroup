@@ -12,4 +12,12 @@ const pool = new Pool({
     : false,
 });
 
+// Keep older databases compatible with new notification-task workflow.
+pool.query(`
+  ALTER TABLE notifications
+  ADD COLUMN IF NOT EXISTS task_id UUID REFERENCES tasks(task_id) ON DELETE CASCADE
+`).catch((err) => {
+  console.error('[db:init] Failed to ensure notifications.task_id column:', err.message);
+});
+
 module.exports = pool;

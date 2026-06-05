@@ -12,7 +12,6 @@ import {
   Bell,
   Settings,
   X,
-  Sparkles,
 } from 'lucide-react';
 
 const navItems = [
@@ -63,9 +62,11 @@ export default function Sidebar({ isOpen, onClose }) {
         {/* Logo */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-sm">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
+            <img
+              src="/smartgroup-logo.svg"
+              alt="SmartGroup logo"
+              className="w-8 h-8 rounded-lg shadow-sm"
+            />
             <span className="font-bold text-lg text-slate-900 dark:text-slate-100">SmartGroup</span>
           </div>
           <button

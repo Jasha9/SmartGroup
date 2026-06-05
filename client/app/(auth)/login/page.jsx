@@ -35,9 +35,11 @@ export default function LoginPage() {
       <div className="mx-auto grid min-h-screen max-w-7xl grid-cols-1 items-center gap-10 px-6 py-10 lg:grid-cols-2 lg:px-10">
         <div className="relative overflow-hidden rounded-[2rem] bg-blue-600 p-10 text-white shadow-2xl lg:p-16">
           <div className="flex items-center gap-3 rounded-3xl bg-white/10 px-4 py-3 shadow-sm shadow-slate-950/20 backdrop-blur-xl">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-white">
-              <Sparkles className="h-5 w-5" />
-            </div>
+            <img
+              src="/smartgroup-logo.svg"
+              alt="SmartGroup logo"
+              className="h-11 w-11 rounded-2xl bg-white/10 p-1"
+            />
             <span className="text-base font-semibold">SmartGroup</span>
           </div>
 

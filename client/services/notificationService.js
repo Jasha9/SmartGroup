@@ -5,6 +5,11 @@ export async function getNotifications() {
   return response.data;
 }
 
+export async function createNotification(payload) {
+  const response = await api.post('/notifications', payload);
+  return response.data;
+}
+
 export async function markNotificationRead(id) {
   const response = await api.patch(`/notifications/${id}/read`);
   return response.data;

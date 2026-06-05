@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { getGroups, updateGroup, deleteGroup } from '@/services/groupService';
+import { getGroups, updateGroup, deleteGroup, getGroupMembers, addGroupMember } from '@/services/groupService';
 import { getTasks, createTask, updateTaskStatus } from '@/services/taskService';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -11,7 +11,7 @@ import LoadingState from '@/components/ui/LoadingState';
 import CreateGroupButton from '@/components/workspace/CreateGroupButton';
 import CreateGroupModal from '@/components/workspace/CreateGroupModal';
 import AddTaskModal from '@/components/workspace/AddTaskModal';
-import { Plus, Clock } from 'lucide-react';
+import { Plus, Clock, Users, UserPlus } from 'lucide-react';
 
 const COLUMNS = [
   {
@@ -62,6 +62,11 @@ export default function GroupWorkspacePage() {
   const [groupModalGroup, setGroupModalGroup] = useState(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [memberActionLoading, setMemberActionLoading] = useState(false);
+  const [memberActionError, setMemberActionError] = useState('');
 
   const refreshGroups = useCallback(async () => {
     try {
@@ -107,6 +112,27 @@ export default function GroupWorkspacePage() {
     fetchTasks(selectedGroup);
   }, [selectedGroup, fetchTasks]);
 
+  const fetchGroupMembers = useCallback(async (group) => {
+    if (!group) {
+      setGroupMembers([]);
+      return;
+    }
+    setMembersLoading(true);
+    try {
+      const groupId = group.group_id || group.id;
+      const data = await getGroupMembers(groupId);
+      setGroupMembers(data?.data?.members || []);
+    } catch {
+      setGroupMembers([]);
+    } finally {
+      setMembersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGroupMembers(selectedGroup);
+  }, [selectedGroup, fetchGroupMembers]);
+
   const handleGroupCreated = useCallback(async () => {
     const list = await refreshGroups();
     if (selectedGroup) {
@@ -136,6 +162,28 @@ export default function GroupWorkspacePage() {
       setTasks([]);
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to delete group. Please try again.');
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedGroup) return;
+    const email = newMemberEmail.trim().toLowerCase();
+    if (!email) {
+      setMemberActionError('Enter an email to add a member.');
+      return;
+    }
+
+    try {
+      setMemberActionLoading(true);
+      setMemberActionError('');
+      const groupId = selectedGroup.group_id || selectedGroup.id;
+      const result = await addGroupMember(groupId, { email });
+      setGroupMembers(result?.data?.members || []);
+      setNewMemberEmail('');
+    } catch (err) {
+      setMemberActionError(err.response?.data?.error || 'Failed to add member.');
+    } finally {
+      setMemberActionLoading(false);
     }
   };
 
@@ -249,6 +297,64 @@ export default function GroupWorkspacePage() {
         <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
           {error || actionError}
         </div>
+      )}
+
+      {/* Group members */}
+      {selectedGroup && (
+        <Card className="p-5">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Group Members</h3>
+              </div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Add members by email and assign AI-generated tasks to them.
+              </p>
+            </div>
+
+            <div className="w-full md:w-auto flex gap-2">
+              <input
+                type="email"
+                placeholder="member@gmail.com"
+                value={newMemberEmail}
+                onChange={(e) => {
+                  setNewMemberEmail(e.target.value);
+                  setMemberActionError('');
+                }}
+                className="w-full md:w-72 px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              <Button onClick={handleAddMember} disabled={memberActionLoading}>
+                <UserPlus className="w-4 h-4" />
+                {memberActionLoading ? 'Adding...' : 'Add Member'}
+              </Button>
+            </div>
+          </div>
+
+          {memberActionError && (
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{memberActionError}</p>
+          )}
+
+          {membersLoading ? (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">Loading members...</p>
+          ) : groupMembers.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No members yet. Add at least one member to start assigning tasks.</p>
+          ) : (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {groupMembers.map((member) => (
+                <span
+                  key={member.user_id}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs"
+                >
+                  <span className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white flex items-center justify-center text-[10px] font-semibold">
+                    {getInitials(member.full_name || member.email)}
+                  </span>
+                  {member.full_name || member.email}
+                </span>
+              ))}
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Kanban */}
