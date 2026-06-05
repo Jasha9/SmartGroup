@@ -86,6 +86,106 @@ async function createGroup(req, res) {
   }
 }
 
+// GET /api/groups/:groupId/members
+async function getGroupMembers(req, res) {
+  const { groupId } = req.params;
+  const userId = req.user.user_id;
+
+  try {
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ success: false, error: 'Access denied to group members.' });
+    }
+
+    const members = await pool.query(
+      `SELECT u.user_id, u.full_name, u.email
+       FROM memberships m
+       JOIN users u ON m.user_id = u.user_id
+       WHERE m.group_id = $1
+       ORDER BY u.full_name ASC`,
+      [groupId]
+    );
+
+    return res.json({ success: true, data: members.rows });
+  } catch (err) {
+    console.error('[getGroupMembers]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to fetch group members.' });
+  }
+}
+
+// POST /api/groups/:groupId/members
+async function addGroupMember(req, res) {
+  const { groupId } = req.params;
+  const { email, user_id: userIdBody } = req.body;
+  const userId = req.user.user_id;
+
+  if (!email && !userIdBody) {
+    return res.status(400).json({ success: false, error: 'Email or user_id is required.' });
+  }
+
+  try {
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ success: false, error: 'Access denied to group members.' });
+    }
+
+    let memberUser;
+    if (userIdBody) {
+      const memberRes = await pool.query(
+        `SELECT user_id, full_name, email FROM users WHERE user_id = $1`,
+        [userIdBody]
+      );
+      memberUser = memberRes.rows[0];
+    } else {
+      const memberRes = await pool.query(
+        `SELECT user_id, full_name, email FROM users WHERE email = $1`,
+        [email.trim().toLowerCase()]
+      );
+      memberUser = memberRes.rows[0];
+
+      if (!memberUser) {
+        const displayName = email.split('@')[0];
+        const createdUser = await pool.query(
+          `INSERT INTO users (email, full_name, role, is_onboarded)
+           VALUES ($1, $2, 'STUDENT', false)
+           RETURNING user_id, full_name, email`,
+          [email.trim().toLowerCase(), displayName]
+        );
+        memberUser = createdUser.rows[0];
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO memberships (user_id, group_id, role)
+       VALUES ($1, $2, 'MEMBER')
+       ON CONFLICT (user_id, group_id) DO NOTHING`,
+      [memberUser.user_id, groupId]
+    );
+
+    const members = await pool.query(
+      `SELECT u.user_id, u.full_name, u.email
+       FROM memberships m
+       JOIN users u ON m.user_id = u.user_id
+       WHERE m.group_id = $1
+       ORDER BY u.full_name ASC`,
+      [groupId]
+    );
+
+    return res.status(201).json({ success: true, data: members.rows });
+  } catch (err) {
+    console.error('[addGroupMember]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to add member to group.' });
+  }
+}
+
 // PUT /api/groups/:groupId
 async function updateGroup(req, res) {
   const { groupId } = req.params;
@@ -153,4 +253,4 @@ async function deleteGroup(req, res) {
   }
 }
 
-module.exports = { getGroups, createGroup, updateGroup, deleteGroup };
+module.exports = { getGroups, createGroup, getGroupMembers, addGroupMember, updateGroup, deleteGroup };
