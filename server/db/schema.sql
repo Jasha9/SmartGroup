@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   notification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
   group_id UUID REFERENCES groups(group_id) ON DELETE CASCADE,
+  task_id UUID REFERENCES tasks(task_id) ON DELETE CASCADE,
   message TEXT NOT NULL,
   type VARCHAR(50),
   is_read BOOLEAN DEFAULT FALSE,

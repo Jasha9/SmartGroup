@@ -10,6 +10,11 @@ export async function getGroupMembers(groupId) {
   return response.data;
 }
 
+export async function addGroupMember(groupId, payload) {
+  const response = await api.post(`/groups/${groupId}/members`, payload);
+  return response.data;
+}
+
 export async function createGroup(data) {
   const response = await api.post('/groups', data);
   return response.data;
