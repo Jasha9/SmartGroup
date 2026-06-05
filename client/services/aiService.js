@@ -9,9 +9,9 @@ export async function getGroups() {
   }
 }
 
-export async function generateTasks(groupId, promptText) {
+export async function generateTasks(assignmentText) {
   try {
-    const response = await api.post("/ai/generate-tasks", { groupId, promptText });
+    const response = await api.post("/ai/generate-tasks", { assignmentText });
     return response.data;
   } catch (err) {
     throw new Error(err.response?.data?.error || "Failed to generate tasks.");

@@ -2,32 +2,7 @@ import React from 'react';
 import LoadingState from '@/components/ui/LoadingState';
 import KanbanColumn from './KanbanColumn';
 
-export default function KanbanBoard() {
-  const isLoading = false;
-  const tasks = [
-    {
-      id: 1,
-      title: 'Set up backend',
-      assignee: 'Dilraj',
-      status: 'TO_DO',
-      priority: 'High',
-    },
-    {
-      id: 2,
-      title: 'Build Kanban UI',
-      assignee: 'Khushi',
-      status: 'IN_PROGRESS',
-      priority: 'Medium',
-    },
-    {
-      id: 3,
-      title: 'Connect AI Planner API',
-      assignee: 'Jashandeep',
-      status: 'DONE',
-      priority: 'High',
-    },
-  ];
-
+export default function KanbanBoard({ tasks = [], isLoading = false, onTaskMove }) {
   const todoTasks = tasks.filter((task) => task.status === 'TO_DO');
   const inProgressTasks = tasks.filter((task) => task.status === 'IN_PROGRESS');
   const doneTasks = tasks.filter((task) => task.status === 'DONE');
@@ -42,10 +17,17 @@ export default function KanbanBoard() {
     return <LoadingState message="Loading tasks..." />;
   }
 
-  const handleTaskMove = (taskId, newStatus) => {
-    // placeholder for future backend integration or drag/drop handling
+  if (tasks.length === 0) {
+    return (
+      <p className="text-sm text-center text-slate-400 dark:text-slate-500 py-10">
+        No tasks available yet. Generate tasks using the AI Planner.
+      </p>
+    );
+  }
+
+  const handleTaskMove = onTaskMove ?? ((taskId, newStatus) => {
     console.log('Move task', taskId, 'to', newStatus);
-  };
+  });
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
