@@ -8,11 +8,11 @@ const KanbanColumn = ({ title, tasks, onTaskMove }) => {
       <div className="tasks-container">
         {tasks && tasks.length > 0 ? (
           tasks.map((task) => (
-            <TaskCard key={task.id} task={task} onMove={onTaskMove} />
+            <TaskCard key={task.task_id || task.id} task={task} onMove={onTaskMove} />
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No tasks available yet.
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            No accepted tasks yet. Accept assigned responsibilities to begin.
           </p>
         )}
       </div>

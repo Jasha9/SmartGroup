@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getGroups, updateGroup, deleteGroup } from '@/services/groupService';
-import { getTasks, createTask, updateTask } from '@/services/taskService';
+import { getTasks, createTask, updateTaskStatus } from '@/services/taskService';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -155,7 +155,7 @@ export default function GroupWorkspacePage() {
   const handleMoveTask = async (taskId, newStatus) => {
     try {
       setActionError(null);
-      const result = await updateTask(taskId, { status: newStatus });
+      const result = await updateTaskStatus(taskId, newStatus);
       const updatedTask = result?.data || result?.task || result;
       setTasks((prev) => prev.map((task) => {
         const id = task.task_id || task.id;
@@ -258,6 +258,18 @@ export default function GroupWorkspacePage() {
             <div className="flex items-center justify-center h-48">
               <LoadingState message="Loading tasks..." />
             </div>
+          ) : tasks.length === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                No accepted tasks yet.
+              </p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Accept assigned responsibilities to begin or create a new task for this group.
+              </p>
+              <Button className="mt-6" onClick={() => setIsTaskModalOpen(true)}>
+                Add a task
+              </Button>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {COLUMNS.map(({ id: colId, title, color, textColor }) => {
@@ -286,6 +298,13 @@ export default function GroupWorkspacePage() {
                             task.assigned_to_email === user.email);
                         const priority = (task.priority || 'MEDIUM').toUpperCase();
                         const priorityCfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.MEDIUM;
+                        const moveOptions = [];
+                        if (task.status === 'TO_DO') {
+                          moveOptions.push({ label: 'Move to In Progress', status: 'IN_PROGRESS' });
+                          moveOptions.push({ label: 'Move to Done', status: 'DONE' });
+                        } else if (task.status === 'IN_PROGRESS') {
+                          moveOptions.push({ label: 'Move to Done', status: 'DONE' });
+                        }
 
                         return (
                           <div
@@ -318,6 +337,20 @@ export default function GroupWorkspacePage() {
                                 </div>
                               )}
                             </div>
+                            {moveOptions.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {moveOptions.map((option) => (
+                                  <button
+                                    key={option.status}
+                                    type="button"
+                                    onClick={() => handleMoveTask(task.task_id || task.id, option.status)}
+                                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-100"
+                                  >
+                                    {option.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}

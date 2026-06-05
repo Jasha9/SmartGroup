@@ -14,6 +14,11 @@ async function getTasks(req, res) {
        FROM tasks t
        LEFT JOIN users u ON t.assigned_to = u.user_id
        WHERE t.group_id = $1
+         AND EXISTS (
+           SELECT 1 FROM charters c
+           WHERE c.task_id = t.task_id
+             AND (c.status = 'ACCEPTED' OR c.is_signed = true)
+         )
        ORDER BY t.created_at ASC`,
       [groupId]
     );
@@ -63,12 +68,17 @@ async function createTasks(req, res) {
       const newTask = taskRes.rows[0];
       saved.push(newTask);
 
-      // Notify assignee if resolved
       if (assignedUserId) {
         await client.query(
-          `INSERT INTO notifications (user_id, group_id, message, type, is_read)
-           VALUES ($1, $2, $3, 'TASK_ASSIGNED', false)`,
-          [assignedUserId, groupId, `You have been assigned: "${newTask.title}"`]
+          `INSERT INTO charters (user_id, group_id, task_id, status, is_signed)
+           VALUES ($1, $2, $3, 'PENDING_ACCEPTANCE', false)`,
+          [assignedUserId, groupId, newTask.task_id]
+        );
+
+        await client.query(
+          `INSERT INTO notifications (user_id, group_id, task_id, message, type, is_read)
+           VALUES ($1, $2, $3, $4, 'TASK_ASSIGNED', false)`,
+          [assignedUserId, groupId, newTask.task_id, `You have been assigned a new task: ${newTask.title}`]
         );
       }
     }
@@ -135,4 +145,36 @@ async function updateTask(req, res) {
   }
 }
 
-module.exports = { getTasks, createTasks, updateTask };
+// PATCH /api/tasks/:taskId/status
+async function updateTaskStatus(req, res) {
+  const { taskId } = req.params;
+  const { status } = req.body;
+  if (!taskId) {
+    return res.status(400).json({ success: false, error: 'Task ID is required.' });
+  }
+  if (!status) {
+    return res.status(400).json({ success: false, error: 'Status is required.' });
+  }
+  const normalizedStatus = status.toUpperCase();
+  if (!['TO_DO', 'IN_PROGRESS', 'DONE'].includes(normalizedStatus)) {
+    return res.status(400).json({ success: false, error: 'Invalid status.' });
+  }
+  try {
+    const taskResult = await pool.query(
+      `UPDATE tasks
+       SET status = $1, updated_at = NOW()
+       WHERE task_id = $2
+       RETURNING *`,
+      [normalizedStatus, taskId]
+    );
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Task not found.' });
+    }
+    return res.json({ success: true, data: { task: taskResult.rows[0] } });
+  } catch (err) {
+    console.error('[updateTaskStatus]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to update task status.' });
+  }
+}
+
+module.exports = { getTasks, createTasks, updateTask, updateTaskStatus };

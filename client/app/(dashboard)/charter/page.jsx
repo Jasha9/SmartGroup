@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getGroups } from '@/services/groupService';
-import { getCharter, signCharter } from '@/services/charterService';
+import { getCharter, acceptCharter, negotiateCharter } from '@/services/charterService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -11,9 +11,10 @@ import LoadingState from '@/components/ui/LoadingState';
 import { CheckCircle2, ArrowLeftRight, FileText, Shield } from 'lucide-react';
 
 const STATUS_CONFIG = {
-  accepted: { badge: 'accepted', label: 'Accepted' },
-  pending: { badge: 'pending', label: 'Pending' },
-  negotiating: { badge: 'negotiating', label: 'Negotiating' },
+  ACCEPTED: { badge: 'accepted', label: 'Accepted / TO_DO' },
+  PENDING: { badge: 'pending', label: 'Pending Acceptance' },
+  PENDING_ACCEPTANCE: { badge: 'pending', label: 'Pending Acceptance' },
+  NEGOTIATING: { badge: 'negotiating', label: 'Negotiating' },
 };
 
 function getInitials(name) {
@@ -26,7 +27,7 @@ export default function CharterPage() {
   const [responsibilities, setResponsibilities] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [signing, setSigning] = useState(false);
+  const [actionLoading, setActionLoading] = useState({});
   const [error, setError] = useState(null);
 
   const fetchCharter = useCallback(async (group) => {
@@ -63,17 +64,35 @@ export default function CharterPage() {
     init();
   }, [fetchCharter]);
 
-  const handleSign = async () => {
+  const handleAccept = async (responsibility) => {
     if (!selectedGroup) return;
-    setSigning(true);
+    const groupId = selectedGroup.group_id || selectedGroup.id;
+    const taskId = responsibility.task_id;
+    setActionLoading((current) => ({ ...current, [taskId]: true }));
+    setError(null);
     try {
-      const groupId = selectedGroup.group_id || selectedGroup.id;
-      await signCharter(groupId);
+      await acceptCharter({ taskId, groupId });
       await fetchCharter(selectedGroup);
     } catch {
-      setError('Failed to sign charter. Please try again.');
+      setError('Failed to accept responsibility. Please try again.');
     } finally {
-      setSigning(false);
+      setActionLoading((current) => ({ ...current, [taskId]: false }));
+    }
+  };
+
+  const handleNegotiate = async (responsibility) => {
+    if (!selectedGroup) return;
+    const groupId = selectedGroup.group_id || selectedGroup.id;
+    const taskId = responsibility.task_id;
+    setActionLoading((current) => ({ ...current, [taskId]: true }));
+    setError(null);
+    try {
+      await negotiateCharter({ taskId, groupId });
+      await fetchCharter(selectedGroup);
+    } catch {
+      setError('Failed to request negotiation. Please try again.');
+    } finally {
+      setActionLoading((current) => ({ ...current, [taskId]: false }));
     }
   };
 
@@ -212,13 +231,23 @@ export default function CharterPage() {
 
                     {isYou && !r.is_signed && (
                       <div className="flex gap-2">
-                        <Button size="sm" className="flex-1" onClick={handleSign} disabled={signing}>
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => handleAccept(r)}
+                          disabled={actionLoading[r.task_id]}
+                        >
                           <CheckCircle2 className="w-4 h-4" />
-                          {signing ? 'Signing...' : 'Accept Responsibility'}
+                          {actionLoading[r.task_id] ? 'Accepting...' : 'Accept Responsibility'}
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleNegotiate(r)}
+                          disabled={actionLoading[r.task_id]}
+                        >
                           <ArrowLeftRight className="w-4 h-4" />
-                          Request Swap
+                          {actionLoading[r.task_id] ? 'Requesting...' : 'Request Negotiation'}
                         </Button>
                       </div>
                     )}
@@ -238,4 +267,4 @@ export default function CharterPage() {
     </div>
   );
 }
-
+

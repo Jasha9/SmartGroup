@@ -20,7 +20,7 @@ export default function KanbanBoard({ tasks = [], isLoading = false, onTaskMove 
   if (tasks.length === 0) {
     return (
       <p className="text-sm text-center text-slate-400 dark:text-slate-500 py-10">
-        No tasks available yet. Generate tasks using the AI Planner.
+        No accepted tasks yet. Accept assigned responsibilities to begin.
       </p>
     );
   }
