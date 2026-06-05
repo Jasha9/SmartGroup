@@ -14,6 +14,7 @@ async function getTasks(req, res) {
        FROM tasks t
        LEFT JOIN users u ON t.assigned_to = u.user_id
        WHERE t.group_id = $1
+         AND t.status IN ('TO_DO', 'IN_PROGRESS', 'DONE')
        ORDER BY t.created_at ASC`,
       [groupId]
     );
@@ -68,7 +69,7 @@ async function createTasks(req, res) {
         await client.query(
           `INSERT INTO notifications (user_id, group_id, message, type, is_read)
            VALUES ($1, $2, $3, 'TASK_ASSIGNED', false)`,
-          [assignedUserId, groupId, `You have been assigned: "${newTask.title}"`]
+          [assignedUserId, groupId, `You have been assigned a new task: ${newTask.title}`]
         );
       }
     }
@@ -79,6 +80,83 @@ async function createTasks(req, res) {
     await client.query('ROLLBACK');
     console.error('[createTasks]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to save tasks.' });
+  } finally {
+    client.release();
+  }
+}
+
+// POST /api/tasks/bulk — bulk create assigned tasks with PENDING_ACCEPTANCE status
+async function bulkSaveTasks(req, res) {
+  const { groupId, tasks = [] } = req.body;
+  if (!groupId) {
+    return res.status(400).json({ success: false, error: 'groupId is required.' });
+  }
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return res.status(400).json({ success: false, error: 'tasks array is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const groupResult = await client.query(`SELECT group_id FROM groups WHERE group_id = $1`, [groupId]);
+    if (groupResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Group not found.' });
+    }
+
+    const saved = [];
+    for (const task of tasks) {
+      if (!task.title || !task.title.trim()) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: 'Each task requires a title.' });
+      }
+
+      let assignedTo = null;
+      if (task.assigned_to) {
+        const assignedUser = await client.query(
+          `SELECT user_id FROM users WHERE user_id = $1`,
+          [task.assigned_to]
+        );
+        if (assignedUser.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ success: false, error: `Assigned user not found: ${task.assigned_to}` });
+        }
+        assignedTo = assignedUser.rows[0].user_id;
+      }
+
+      const taskRes = await client.query(
+        `INSERT INTO tasks (group_id, title, description, priority, status, effort_hours, assigned_to)
+         VALUES ($1, $2, $3, $4, 'PENDING_ACCEPTANCE', $5, $6)
+         RETURNING task_id, group_id, title, description, status, priority, effort_hours, assigned_to, due_date, is_signed, created_at`,
+        [
+          groupId,
+          task.title.trim(),
+          task.description || '',
+          (task.priority || 'MEDIUM').toUpperCase(),
+          task.estimated_hours || null,
+          assignedTo,
+        ]
+      );
+
+      const newTask = taskRes.rows[0];
+      saved.push(newTask);
+
+      if (assignedTo) {
+        await client.query(
+          `INSERT INTO notifications (user_id, group_id, message, type, is_read)
+           VALUES ($1, $2, $3, 'TASK_ASSIGNED', false)`,
+          [assignedTo, groupId, `You have been assigned a new task: ${newTask.title}`]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({ success: true, data: { saved: saved.length, tasks: saved } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[bulkSaveTasks]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to save bulk tasks.' });
   } finally {
     client.release();
   }
@@ -135,4 +213,4 @@ async function updateTask(req, res) {
   }
 }
 
-module.exports = { getTasks, createTasks, updateTask };
+module.exports = { getTasks, createTasks, bulkSaveTasks, updateTask };
