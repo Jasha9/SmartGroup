@@ -55,7 +55,7 @@ export default function AIPlannerPage() {
       try {
         setMembersLoading(true);
         const data = await getGroupMembers(selectedGroupId);
-        setMembers(data?.data?.members || []);
+        setMembers(data?.data?.members || data?.data || []);
       } catch {
         setMembers([]);
       } finally {

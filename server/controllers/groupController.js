@@ -110,7 +110,7 @@ async function getGroupMembers(req, res) {
       [groupId]
     );
 
-    return res.json({ success: true, data: members.rows });
+    return res.json({ success: true, data: { members: members.rows } });
   } catch (err) {
     console.error('[getGroupMembers]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to fetch group members.' });
@@ -179,7 +179,7 @@ async function addGroupMember(req, res) {
       [groupId]
     );
 
-    return res.status(201).json({ success: true, data: members.rows });
+    return res.status(201).json({ success: true, data: { members: members.rows } });
   } catch (err) {
     console.error('[addGroupMember]', err.message);
     return res.status(500).json({ success: false, error: 'Failed to add member to group.' });

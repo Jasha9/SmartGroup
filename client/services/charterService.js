@@ -5,22 +5,16 @@ export async function getCharter(groupId) {
   return response.data;
 }
 
-export async function acceptCharter(taskId) {
-  const response = await api.post('/charters/accept', { taskId });
+export async function acceptCharter(input) {
+  // Backward-compatible: accept either taskId or payload object.
+  const payload = typeof input === 'object' && input !== null ? input : { taskId: input };
+  const response = await api.post('/charters/accept', payload);
   return response.data;
 }
 
-export async function negotiateCharter(taskId) {
-  const response = await api.post('/charters/negotiate', { taskId });
-  return response.data;
-}
-
-export async function acceptCharter({ notificationId, taskId, groupId }) {
-  const response = await api.post('/charters/accept', { notificationId, taskId, groupId });
-  return response.data;
-}
-
-export async function negotiateCharter({ notificationId, taskId, groupId }) {
-  const response = await api.post('/charters/negotiate', { notificationId, taskId, groupId });
+export async function negotiateCharter(input) {
+  // Backward-compatible: accept either taskId or payload object.
+  const payload = typeof input === 'object' && input !== null ? input : { taskId: input };
+  const response = await api.post('/charters/negotiate', payload);
   return response.data;
 }

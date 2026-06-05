@@ -132,6 +132,16 @@ async function bulkSaveTasks(req, res) {
           return res.status(404).json({ success: false, error: `Assigned user not found: ${task.assigned_to}` });
         }
         assignedTo = assignedUser.rows[0].user_id;
+      } else if (task.assigned_to_email) {
+        const assignedUser = await client.query(
+          `SELECT user_id FROM users WHERE lower(email) = lower($1)`,
+          [String(task.assigned_to_email).trim()]
+        );
+        if (assignedUser.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ success: false, error: `Assigned user not found for email: ${task.assigned_to_email}` });
+        }
+        assignedTo = assignedUser.rows[0].user_id;
       }
 
       const taskRes = await client.query(
@@ -153,9 +163,15 @@ async function bulkSaveTasks(req, res) {
 
       if (assignedTo) {
         await client.query(
-          `INSERT INTO notifications (user_id, group_id, message, type, is_read)
-           VALUES ($1, $2, $3, 'TASK_ASSIGNED', false)`,
-          [assignedTo, groupId, `You have been assigned a new task: ${newTask.title}`]
+          `INSERT INTO charters (user_id, group_id, task_id, status, is_signed)
+           VALUES ($1, $2, $3, 'PENDING_ACCEPTANCE', false)`,
+          [assignedTo, groupId, newTask.task_id]
+        );
+
+        await client.query(
+          `INSERT INTO notifications (user_id, group_id, task_id, message, type, is_read)
+           VALUES ($1, $2, $3, $4, 'TASK_ASSIGNED', false)`,
+          [assignedTo, groupId, newTask.task_id, `You have been assigned a new task: ${newTask.title}`]
         );
       }
     }
