@@ -4,15 +4,44 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+:root {
+  --sg-primary: #0f172a;
+  --sg-secondary: #14b8a6;
+  --sg-accent: #6366f1;
+  --sg-success: #22c55e;
+  --sg-warning: #f59e0b;
+  --sg-bg: #f8fafc;
+  --sg-surface: #ffffff;
+}
+
+.dark {
+  --sg-bg: #020617;
+  --sg-surface: #0f172a;
+}
+
 @layer base {
   * {
     @apply border-slate-200 dark:border-slate-800;
   }
   body {
-    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased;
+    @apply text-slate-900 dark:text-slate-100 antialiased;
+    background:
+      radial-gradient(1000px 500px at -10% -10%, rgba(20, 184, 166, 0.15), transparent 45%),
+      radial-gradient(900px 450px at 110% 0%, rgba(99, 102, 241, 0.1), transparent 40%),
+      var(--sg-bg);
     font-family: 'Inter', system-ui, sans-serif;
   }
   html {
     @apply scroll-smooth;
+  }
+}
+
+@layer components {
+  .sg-page-shell {
+    @apply rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-slate-900/80 backdrop-blur-sm shadow-sm;
+  }
+
+  .sg-eyebrow {
+    @apply text-xs uppercase tracking-[0.18em] font-semibold text-teal-700 dark:text-teal-300;
   }
 }

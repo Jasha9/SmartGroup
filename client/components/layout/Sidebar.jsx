@@ -9,19 +9,17 @@ import {
   Users,
   FileText,
   BarChart3,
-  Bell,
-  Settings,
+  Zap,
   X,
 } from 'lucide-react';
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'AI Planner', href: '/ai-planner', icon: Brain },
+  { label: 'SmartGroup Assistant', href: '/smartgroup-assistant', icon: Brain },
   { label: 'Group Workspace', href: '/workspace', icon: Users },
   { label: 'Group Charter', href: '/charter', icon: FileText },
-  { label: 'Contributions', href: '/contributions', icon: BarChart3 },
-  { label: 'Notifications', href: '/notifications', icon: Bell },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: 'Team Insights', href: '/team-insights', icon: BarChart3 },
+  { label: 'Action Center', href: '/action-center', icon: Zap },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -67,7 +65,12 @@ export default function Sidebar({ isOpen, onClose }) {
               alt="SmartGroup logo"
               className="w-8 h-8 rounded-lg shadow-sm"
             />
-            <span className="font-bold text-lg text-slate-900 dark:text-slate-100">SmartGroup</span>
+            <div>
+              <span className="font-bold text-lg text-slate-900 dark:text-slate-100 block leading-tight">SmartGroup</span>
+              <span className="text-[10px] uppercase tracking-[0.14em] text-teal-600 dark:text-teal-300">
+                AI-powered accountability for student teams
+              </span>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -90,7 +93,7 @@ export default function Sidebar({ isOpen, onClose }) {
                   flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
                   ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-sm'
+                      ? 'bg-[#0f172a] text-white shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }
                 `}
