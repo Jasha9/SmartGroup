@@ -1,14 +1,54 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
-import Progress from '@/components/ui/Progress';
+import { useMemo, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
-import { TrendingUp, CheckCircle2, FileSignature, Bell } from 'lucide-react';
+import Progress from '@/components/ui/Progress';
+import { Sparkles, CalendarClock, ShieldCheck, ArrowRight, AlertTriangle } from 'lucide-react';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 
+function greetingByTime() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good Morning';
+  if (hour < 18) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
+function firstName(nameOrEmail) {
+  if (!nameOrEmail) return 'Student';
+  return nameOrEmail.split(' ')[0] || nameOrEmail.split('@')[0] || 'Student';
+}
+
+function clamp(value, min = 0, max = 100) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getDaysToDeadline(tasks) {
+  const dueDates = tasks
+    .map((t) => t?.due_date)
+    .filter(Boolean)
+    .map((d) => new Date(d))
+    .filter((d) => !Number.isNaN(d.getTime()))
+    .sort((a, b) => a - b);
+
+  if (dueDates.length === 0) return 12;
+  const diffMs = dueDates[0].getTime() - Date.now();
+  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
+  return [];
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -16,10 +56,12 @@ export default function DashboardPage() {
     activeTasks: 0,
     pendingSignatures: 0,
     unreadNotifications: 0,
+    overdueTasks: 0,
   });
   const [memberContributions, setMemberContributions] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [groupName, setGroupName] = useState('');
+  const [groupName, setGroupName] = useState('NIT3004 Capstone Team');
+  const [tasks, setTasks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -29,57 +71,60 @@ export default function DashboardPage() {
           api.get('/notifications'),
         ]);
 
-        // Groups / tasks
+        let localTasks = [];
+        let localContributions = [];
+
         if (groupsRes.status === 'fulfilled') {
           const groupsData = groupsRes.value.data;
           const groups = groupsData.groups || groupsData || [];
           if (groups.length > 0) {
             const firstGroup = groups[0];
-            setGroupName(firstGroup.group_name || firstGroup.name || 'My Group');
+            setGroupName(firstGroup.group_name || firstGroup.name || 'NIT3004 Capstone Team');
             const groupId = firstGroup.group_id || firstGroup.id;
 
-            // Fetch tasks and contributions for the first group
             const [tasksRes, contribRes] = await Promise.allSettled([
               api.get(`/tasks?groupId=${groupId}`),
               api.get(`/contributions/${groupId}`),
             ]);
 
             if (tasksRes.status === 'fulfilled') {
-              const tasks = tasksRes.value.data.tasks || tasksRes.value.data || [];
-              const active = tasks.filter((t) => t.status !== 'DONE').length;
-              const done = tasks.filter((t) => t.status === 'DONE').length;
-              const total = tasks.length;
-              const pendingSig = tasks.filter((t) => !t.is_signed).length;
+              const fetchedTasks = asArray(tasksRes.value.data.tasks || tasksRes.value.data);
+              localTasks = fetchedTasks;
+              setTasks(fetchedTasks);
+
+              const active = fetchedTasks.filter((t) => t.status !== 'DONE').length;
+              const done = fetchedTasks.filter((t) => t.status === 'DONE').length;
+              const total = fetchedTasks.length;
+              const pendingSig = fetchedTasks.filter((t) => !t.is_signed).length;
+              const overdue = fetchedTasks.filter((t) => t.status !== 'DONE' && t.due_date && new Date(t.due_date) < new Date()).length;
+
               setStats((prev) => ({
                 ...prev,
                 activeTasks: active,
                 progress: total > 0 ? Math.round((done / total) * 100) : 0,
                 pendingSignatures: pendingSig,
+                overdueTasks: overdue,
               }));
             }
 
             if (contribRes.status === 'fulfilled') {
-              const contributions = contribRes.value.data.contributions || contribRes.value.data || [];
-              setMemberContributions(contributions);
+              localContributions = asArray(contribRes.value.data.contributions || contribRes.value.data);
+              setMemberContributions(localContributions);
             }
           }
         }
 
-        // Notifications
         if (notificationsRes.status === 'fulfilled') {
-          const notifications = notificationsRes.value.data.notifications || notificationsRes.value.data || [];
-          const unread = notifications.filter((n) => !n.is_read).length;
+          const list = asArray(notificationsRes.value.data.notifications || notificationsRes.value.data);
+          setNotifications(list);
+          const unread = list.filter((n) => !n.is_read).length;
           setStats((prev) => ({ ...prev, unreadNotifications: unread }));
-          // Use notifications as recent activity feed
-          setRecentActivity(
-            notifications.slice(0, 5).map((n) => ({
-              message: n.message,
-              time: n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-            }))
-          );
         }
+
+        if (localTasks.length === 0) setTasks([]);
+        if (localContributions.length === 0) setMemberContributions([]);
       } catch {
-        // Silently fail — UI will show zeros/empty state
+        // Keep resilient dashboard state.
       } finally {
         setLoading(false);
       }
@@ -88,160 +133,226 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, []);
 
-  const statCards = [
-    {
-      title: 'Overall Progress',
-      value: `${stats.progress}%`,
-      description: 'Project completion',
-      icon: TrendingUp,
-      color: 'text-blue-600 dark:text-blue-400',
-      bg: 'bg-blue-50 dark:bg-blue-900/20',
-    },
-    {
-      title: 'Active Tasks',
-      value: String(stats.activeTasks),
-      description: 'In progress or to do',
-      icon: CheckCircle2,
-      color: 'text-emerald-600 dark:text-emerald-400',
-      bg: 'bg-emerald-50 dark:bg-emerald-900/20',
-    },
-    {
-      title: 'Pending Signatures',
-      value: String(stats.pendingSignatures),
-      description: 'Charter approvals',
-      icon: FileSignature,
-      color: 'text-amber-600 dark:text-amber-400',
-      bg: 'bg-amber-50 dark:bg-amber-900/20',
-    },
-    {
-      title: 'Notifications',
-      value: String(stats.unreadNotifications),
-      description: 'Unread alerts',
-      icon: Bell,
-      color: 'text-violet-600 dark:text-violet-400',
-      bg: 'bg-violet-50 dark:bg-violet-900/20',
-    },
-  ];
+  const daysRemaining = useMemo(() => getDaysToDeadline(tasks), [tasks]);
+
+  const healthScore = useMemo(() => {
+    const pendingRatio = stats.activeTasks > 0 ? stats.pendingSignatures / stats.activeTasks : 0;
+    const completion = stats.progress;
+    const participation = memberContributions.length > 0
+      ? Math.round(memberContributions.reduce((sum, m) => sum + (m.percentage || 0), 0) / memberContributions.length)
+      : 70;
+    const overduePenalty = stats.overdueTasks * 7;
+
+    const score = completion * 0.45 + participation * 0.35 + (100 - pendingRatio * 100) * 0.2 - overduePenalty;
+    return clamp(Math.round(score));
+  }, [stats, memberContributions]);
+
+  const healthLabel = healthScore >= 85 ? 'Excellent' : healthScore >= 70 ? 'Stable' : 'At Risk';
+
+  const scoreboard = useMemo(() => {
+    return [...memberContributions]
+      .map((m) => ({
+        name: m.full_name || m.name || m.email || 'Member',
+        score: m.percentage || 0,
+        completed: m.completed || 0,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4);
+  }, [memberContributions]);
+
+  const recommendations = useMemo(() => {
+    const tips = [];
+    if (stats.pendingSignatures > 0) {
+      tips.push(`${stats.pendingSignatures} responsibilities still need acknowledgement.`);
+    }
+    if (stats.overdueTasks > 0) {
+      tips.push(`${stats.overdueTasks} tasks are overdue. Prioritise a recovery check-in.`);
+    }
+    if (stats.activeTasks >= 3) {
+      tips.push(`${stats.activeTasks} active tasks are in-flight. Schedule a short review this week.`);
+    }
+    if (scoreboard[0] && scoreboard[scoreboard.length - 1]) {
+      tips.push(`Workload gap detected between ${scoreboard[0].name} and ${scoreboard[scoreboard.length - 1].name}. Consider rebalancing.`);
+    }
+    if (tips.length === 0) {
+      tips.push('Team momentum is healthy. Keep progress updates flowing in the workspace.');
+    }
+    return tips.slice(0, 4);
+  }, [stats, scoreboard]);
+
+  const pendingActions = useMemo(() => {
+    const cards = [];
+
+    if (stats.pendingSignatures > 0) {
+      cards.push({
+        title: 'Accept Responsibility',
+        detail: `${stats.pendingSignatures} task acknowledgements pending`,
+        variant: 'warning',
+      });
+    }
+
+    if (stats.overdueTasks > 0) {
+      cards.push({
+        title: 'Update Progress',
+        detail: `${stats.overdueTasks} tasks need status updates`,
+        variant: 'destructive',
+      });
+    }
+
+    asArray(notifications)
+      .filter((n) => !n.is_read)
+      .slice(0, 2)
+      .forEach((n) => {
+        cards.push({
+          title: n.type === 'TASK_ASSIGNED' ? 'Review Assignment' : 'Review Team Alert',
+          detail: n.message,
+          variant: 'blue',
+        });
+      });
+
+    return cards.slice(0, 4);
+  }, [stats, notifications]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingState />
+      <div className="max-w-7xl mx-auto">
+        <LoadingState message="SmartGroup Assistant is preparing your team overview..." />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Welcome */}
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-          Welcome back, {user?.full_name || user?.email || 'there'} 👋
-        </h2>
-        <p className="text-slate-500 dark:text-slate-400 mt-1">
-          {groupName ? `Active group: ${groupName}` : "Here's what's happening with your group project today."}
-        </p>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(({ title, value, description, icon: Icon, color, bg }) => (
-          <Card key={title} className="hover:shadow-md">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
-                  <p className="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{value}</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{description}</p>
-                </div>
-                <div className={`p-3 rounded-xl ${bg}`}>
-                  <Icon className={`w-5 h-5 ${color}`} />
-                </div>
+      <Card className="overflow-hidden border-slate-200/70 dark:border-slate-800">
+        <CardContent className="py-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="sg-eyebrow">AI Project Coordinator</p>
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-2">
+                {greetingByTime()}, {firstName(user?.full_name || user?.email)}
+              </h2>
+              <p className="text-slate-600 dark:text-slate-300 mt-2">
+                SmartGroup keeps your team accountable and on track for academic success.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50/70 dark:bg-slate-800/70">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Capstone Deadline</p>
+                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-1">{daysRemaining} Days Remaining</p>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 bg-slate-50/70 dark:bg-slate-800/70">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Current Group</p>
+                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-1">{groupName}</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Progress card */}
-        <Card className="lg:col-span-2">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <Card className="xl:col-span-1">
           <CardHeader>
-            <CardTitle>Project Progress</CardTitle>
-            <CardDescription>{groupName || 'Group Project'}</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-teal-600" />
+              Group Health Score
+            </CardTitle>
+            <CardDescription>Based on completion, participation, acknowledgements, and pending workload.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Progress value={stats.progress} label="Overall completion" />
+            <div className="flex items-center justify-between">
+              <Badge variant={healthScore >= 85 ? 'accepted' : healthScore >= 70 ? 'blue' : 'warning'}>{healthLabel}</Badge>
+              <span className="text-2xl font-bold text-slate-900 dark:text-slate-100">{healthScore}%</span>
+            </div>
+            <Progress value={healthScore} label="Team Health" />
+            <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1">
+              <p>Pending tasks: {stats.activeTasks}</p>
+              <p>Pending acknowledgements: {stats.pendingSignatures}</p>
+              <p>Completion rate: {stats.progress}%</p>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Contribution preview */}
-        <Card>
+        <Card className="xl:col-span-2">
           <CardHeader>
-            <CardTitle>Team Contributions</CardTitle>
-            <CardDescription>Tasks completed per member</CardDescription>
+            <CardTitle>Accountability Scoreboard</CardTitle>
+            <CardDescription>Contribution ranking by ownership follow-through.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {memberContributions.length === 0 ? (
-              <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-4">
-                No contribution data yet.
-              </p>
+          <CardContent>
+            {scoreboard.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">SmartGroup Assistant is ready to build your first accountability baseline.</p>
             ) : (
-              memberContributions.map(({ full_name, name, percentage, completed, total, avatar }) => {
-                const displayName = full_name || name || 'Member';
-                const initials = displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-                const pct = percentage ?? (total > 0 ? Math.round((completed / total) * 100) : 0);
-                return (
-                  <div key={displayName} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-                      {avatar || initials}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {scoreboard.map((member, idx) => (
+                  <div key={member.name} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/60 dark:bg-slate-800/40">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">{member.name}</p>
+                      <Badge variant={idx === 0 ? 'accepted' : 'default'}>Rank #{idx + 1}</Badge>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{displayName}</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">{pct}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5">
-                        <div className="h-full bg-gradient-to-r from-blue-600 to-violet-600 rounded-full" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
+                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-300 mt-2">{member.score}%</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{member.completed} completed tasks</p>
                   </div>
-                );
-              })
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>Latest updates from your team</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {recentActivity.length === 0 ? (
-            <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-4">
-              No recent activity yet.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {recentActivity.map(({ message, time }, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-                    SG
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-slate-700 dark:text-slate-300">{message}</p>
-                    {time && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{time}</p>}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600" />
+              SmartGroup Assistant
+            </CardTitle>
+            <CardDescription>AI guidance for this week.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {recommendations.map((tip, index) => (
+              <div key={index} className="rounded-xl border border-slate-200 dark:border-slate-800 px-4 py-3 bg-white dark:bg-slate-900">
+                <p className="text-sm text-slate-700 dark:text-slate-300">{tip}</p>
+              </div>
+            ))}
+            <Button variant="teal" className="w-full mt-2 justify-between" onClick={() => router.push('/smartgroup-assistant')}>
+              Open SmartGroup Assistant
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CalendarClock className="w-5 h-5 text-amber-500" />
+              Pending Actions
+            </CardTitle>
+            <CardDescription>What requires your attention now.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingActions.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-800/50">
+                <p className="text-sm text-slate-600 dark:text-slate-300">No actions require your attention right now.</p>
+              </div>
+            ) : (
+              pendingActions.map((action, idx) => (
+                <div key={idx} className="rounded-xl border border-slate-200 dark:border-slate-800 px-4 py-3 bg-white dark:bg-slate-900">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-slate-100">{action.title}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{action.detail}</p>
+                    </div>
+                    <Badge variant={action.variant}>{action.variant === 'warning' ? 'Action Needed' : 'Pending'}</Badge>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ))
+            )}
+            <Button variant="outline" className="w-full" onClick={() => router.push('/action-center')}>
+              <AlertTriangle className="w-4 h-4" />
+              Review Action Center
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
-

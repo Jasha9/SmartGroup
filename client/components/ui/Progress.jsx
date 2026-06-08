@@ -17,7 +17,7 @@ export default function Progress({ value = 0, max = 100, label, showPercent = tr
       )}
       <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
         <div
-          className="h-full bg-gradient-to-r from-blue-600 to-violet-600 rounded-full transition-all duration-500"
+          className="h-full bg-gradient-to-r from-teal-500 to-indigo-500 rounded-full transition-all duration-500"
           style={{ width: `${percentage}%` }}
         />
       </div>
