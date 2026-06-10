@@ -5,6 +5,21 @@ export async function getTasks(groupId) {
   return response.data;
 }
 
+export async function getMyTasks() {
+  const response = await api.get('/tasks/my-tasks');
+  return response.data;
+}
+
+export async function getTaskComments(taskId) {
+  const response = await api.get(`/tasks/${taskId}/comments`);
+  return response.data;
+}
+
+export async function addTaskComment(taskId, comment_text) {
+  const response = await api.post(`/tasks/${taskId}/comments`, { comment_text });
+  return response.data;
+}
+
 export async function createTask(data) {
   const response = await api.post('/tasks', data);
   return response.data;

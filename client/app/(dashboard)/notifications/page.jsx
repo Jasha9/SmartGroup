@@ -111,7 +111,7 @@ export default function NotificationsPage() {
             </div>
             <div>
               <p className="sg-eyebrow">Action Required</p>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Action Center</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Alerts</h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Task assignments, acknowledgements, negotiations, and team alerts.
               </p>

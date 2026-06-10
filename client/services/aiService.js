@@ -18,9 +18,13 @@ export async function generateTasks(assignmentText) {
   }
 }
 
-export async function saveAssignedTasks(groupId, tasks) {
+export async function saveAssignedTasks(groupId, tasks, assessmentMeta = {}) {
   try {
-    const response = await api.post("/tasks/bulk", { groupId, tasks });
+    const response = await api.post("/tasks/bulk", {
+      groupId,
+      tasks,
+      ...assessmentMeta,
+    });
     return response.data;
   } catch (err) {
     throw new Error(err.response?.data?.error || "Failed to save tasks.");

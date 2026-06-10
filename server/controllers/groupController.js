@@ -186,6 +186,89 @@ async function addGroupMember(req, res) {
   }
 }
 
+// GET /api/groups/:groupId/messages
+async function getGroupMessages(req, res) {
+  const { groupId } = req.params;
+  const userId = req.user.user_id;
+
+  try {
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ success: false, error: 'Access denied to group messages.' });
+    }
+
+    const result = await pool.query(
+      `SELECT gm.message_id, gm.group_id, gm.user_id, gm.message_text, gm.created_at,
+              u.full_name, u.email
+       FROM group_messages gm
+       JOIN users u ON gm.user_id = u.user_id
+       WHERE gm.group_id = $1
+       ORDER BY gm.created_at ASC
+       LIMIT 200`,
+      [groupId]
+    );
+
+    return res.json({ success: true, data: { messages: result.rows } });
+  } catch (err) {
+    console.error('[getGroupMessages]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to fetch group messages.' });
+  }
+}
+
+// POST /api/groups/:groupId/messages
+async function addGroupMessage(req, res) {
+  const { groupId } = req.params;
+  const { message_text, message } = req.body;
+  const userId = req.user.user_id;
+
+  const text = String(message_text || message || '').trim();
+  if (!text) {
+    return res.status(400).json({ success: false, error: 'message_text is required.' });
+  }
+
+  try {
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2`,
+      [groupId, userId]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ success: false, error: 'Access denied to group messages.' });
+    }
+
+    const inserted = await pool.query(
+      `INSERT INTO group_messages (group_id, user_id, message_text)
+       VALUES ($1, $2, $3)
+       RETURNING message_id, group_id, user_id, message_text, created_at`,
+      [groupId, userId, text]
+    );
+
+    const messageRow = inserted.rows[0];
+    const userRes = await pool.query(
+      `SELECT full_name, email FROM users WHERE user_id = $1`,
+      [userId]
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        message: {
+          ...messageRow,
+          full_name: userRes.rows[0]?.full_name || null,
+          email: userRes.rows[0]?.email || null,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('[addGroupMessage]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to send group message.' });
+  }
+}
+
 // PUT /api/groups/:groupId
 async function updateGroup(req, res) {
   const { groupId } = req.params;
@@ -254,4 +337,4 @@ async function deleteGroup(req, res) {
 }
 
 
-module.exports = { getGroups, createGroup, getGroupMembers, addGroupMember, updateGroup, deleteGroup };
+module.exports = { getGroups, createGroup, getGroupMembers, addGroupMember, getGroupMessages, addGroupMessage, updateGroup, deleteGroup };
