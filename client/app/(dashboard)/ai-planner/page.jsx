@@ -10,16 +10,18 @@ import { AlertCircle, CheckCircle2, Sparkles, Upload, Users } from 'lucide-react
 
 const STEPS = [
   'Select Group',
+  'Assessment Details',
   'Assignment Brief',
   'AI Analysis',
-  'Review Tasks',
-  'Assign Members',
+  'Review & Assign Members',
   'Publish Plan',
 ];
 
 export default function AIPlannerPage() {
   const [step, setStep] = useState(1);
   const [inputMode, setInputMode] = useState('text');
+  const [assessmentTitle, setAssessmentTitle] = useState('');
+  const [assessmentDueDate, setAssessmentDueDate] = useState('');
   const [promptText, setPromptText] = useState('');
   const [uploadedFile, setUploadedFile] = useState(null);
 
@@ -77,7 +79,7 @@ export default function AIPlannerPage() {
     fetchMembers();
   }, [selectedGroupId]);
 
-  const canGenerate = inputMode === 'upload' ? !!uploadedFile : promptText.trim().length > 0;
+  const canGenerate = assessmentTitle.trim().length > 0 && (inputMode === 'upload' ? !!uploadedFile : promptText.trim().length > 0);
   const canPublish = generatedTasks.length > 0 && generatedTasks.every((task) => task.assigned_to_email);
 
   const completionPct = useMemo(() => Math.round((step / STEPS.length) * 100), [step]);
@@ -88,7 +90,7 @@ export default function AIPlannerPage() {
       setError('');
       setSaveSuccess(false);
       setStep(3);
-      setAssistantNote('Analysing assignment details...');
+      setAssistantNote('Analysing assessment brief...');
 
       const data = await generateTasks(promptText);
       const rawTasks = data?.data?.tasks || [];
@@ -155,7 +157,11 @@ export default function AIPlannerPage() {
     try {
       setSaving(true);
       setError('');
-      await saveAssignedTasks(selectedGroupId, generatedTasks);
+      await saveAssignedTasks(selectedGroupId, generatedTasks, {
+        assessmentTitle: assessmentTitle.trim(),
+        assessmentDescription: promptText.trim(),
+        assessmentDueDate: assessmentDueDate || null,
+      });
       setStep(6);
       setSaveSuccess(true);
       setAssistantNote('Project plan published. Team members have been notified in the Action Center.');
@@ -250,7 +256,42 @@ export default function AIPlannerPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Step 2: Upload Assignment Brief or Paste Text</CardTitle>
+          <CardTitle>Step 2: Assessment Details</CardTitle>
+          <CardDescription>Give this project plan a clear assessment title and optional due date.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Assessment title</label>
+              <input
+                value={assessmentTitle}
+                onChange={(e) => {
+                  setAssessmentTitle(e.target.value);
+                  if (step < 2) setStep(2);
+                }}
+                placeholder="e.g. Final Report Draft"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Due date (optional)</label>
+              <input
+                type="date"
+                value={assessmentDueDate}
+                onChange={(e) => {
+                  setAssessmentDueDate(e.target.value);
+                  if (step < 2) setStep(2);
+                }}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Step 3: Upload Assignment Brief or Paste Text</CardTitle>
           <CardDescription>Add assignment context for AI analysis.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -258,7 +299,7 @@ export default function AIPlannerPage() {
             <button
               onClick={() => {
                 setInputMode('text');
-                if (step < 2) setStep(2);
+                if (step < 3) setStep(3);
               }}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                 inputMode === 'text'
@@ -271,7 +312,7 @@ export default function AIPlannerPage() {
             <button
               onClick={() => {
                 setInputMode('upload');
-                if (step < 2) setStep(2);
+                if (step < 3) setStep(3);
               }}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                 inputMode === 'upload'
@@ -290,7 +331,7 @@ export default function AIPlannerPage() {
               value={promptText}
               onChange={(e) => {
                 setPromptText(e.target.value);
-                if (step < 2) setStep(2);
+                if (step < 3) setStep(3);
               }}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm resize-none"
             />

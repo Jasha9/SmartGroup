@@ -309,7 +309,7 @@ export default function GroupWorkspacePage() {
         <div className="flex items-center gap-4 flex-wrap">
           <div>
             <p className="sg-eyebrow">Team Collaboration Hub</p>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">Group Workspace</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">Team Space</h2>
             <p className="text-slate-500 dark:text-slate-400 mt-1">{groupName || 'No group selected'}</p>
           </div>
           <CreateGroupButton onGroupCreated={handleGroupCreated} />

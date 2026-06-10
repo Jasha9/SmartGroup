@@ -99,7 +99,7 @@ export default function ContributionDashboardPage() {
     <div className="space-y-6 max-w-6xl mx-auto">
       <div>
         <p className="sg-eyebrow">Accountability Intelligence</p>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">Team Insights</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">Team Progress</h2>
         <p className="text-slate-500 dark:text-slate-400 mt-1">
           Accountability scores, workload balance, and team health analytics.
         </p>

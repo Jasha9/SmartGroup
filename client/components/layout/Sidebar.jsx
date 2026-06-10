@@ -15,11 +15,12 @@ import {
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'My Tasks', href: '/my-tasks', icon: Users },
   { label: 'SmartGroup Assistant', href: '/smartgroup-assistant', icon: Brain },
-  { label: 'Group Workspace', href: '/workspace', icon: Users },
-  { label: 'Group Charter', href: '/charter', icon: FileText },
-  { label: 'Team Insights', href: '/team-insights', icon: BarChart3 },
-  { label: 'Action Center', href: '/action-center', icon: Zap },
+  { label: 'Team Space', href: '/workspace', icon: Users },
+  { label: 'Responsibilities', href: '/charter', icon: FileText },
+  { label: 'Team Progress', href: '/team-insights', icon: BarChart3 },
+  { label: 'Alerts', href: '/action-center', icon: Zap },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {

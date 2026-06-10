@@ -121,7 +121,7 @@ export default function CharterPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Group Charter</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Responsibilities</h2>
           <p className="text-slate-500 dark:text-slate-400 mt-1">
             Review and accept your assigned responsibilities.
           </p>

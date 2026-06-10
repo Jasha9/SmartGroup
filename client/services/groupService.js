@@ -29,3 +29,13 @@ export async function deleteGroup(groupId) {
   const response = await api.delete(`/groups/${groupId}`);
   return response.data;
 }
+
+export async function getGroupMessages(groupId) {
+  const response = await api.get(`/groups/${groupId}/messages`);
+  return response.data;
+}
+
+export async function addGroupMessage(groupId, message_text) {
+  const response = await api.post(`/groups/${groupId}/messages`, { message_text });
+  return response.data;
+}

@@ -9,14 +9,15 @@ import { getNotifications } from '@/services/notificationService';
 
 const pageTitles = {
   '/dashboard': 'Dashboard',
+  '/my-tasks': 'My Tasks',
   '/ai-planner': 'SmartGroup Assistant',
   '/smartgroup-assistant': 'SmartGroup Assistant',
-  '/workspace': 'Group Workspace',
-  '/charter': 'Group Charter',
-  '/contributions': 'Team Insights',
-  '/team-insights': 'Team Insights',
-  '/notifications': 'Action Center',
-  '/action-center': 'Action Center',
+  '/workspace': 'Team Space',
+  '/charter': 'Responsibilities',
+  '/contributions': 'Team Progress',
+  '/team-insights': 'Team Progress',
+  '/notifications': 'Alerts',
+  '/action-center': 'Alerts',
 };
 
 export default function Topbar({ onMenuClick }) {
