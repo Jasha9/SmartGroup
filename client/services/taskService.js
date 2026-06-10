@@ -10,6 +10,19 @@ export async function getMyTasks() {
   return response.data;
 }
 
+export async function acceptTask(taskId) {
+  const response = await api.post('/charters/accept', { taskId });
+  return response.data;
+}
+
+export async function requestTaskChange(taskId, payload = {}) {
+  const response = await api.post('/charters/negotiate', {
+    taskId,
+    ...payload,
+  });
+  return response.data;
+}
+
 export async function getTaskComments(taskId) {
   const response = await api.get(`/tasks/${taskId}/comments`);
   return response.data;
