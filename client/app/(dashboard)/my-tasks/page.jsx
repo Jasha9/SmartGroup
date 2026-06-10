@@ -1,310 +1,565 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { getMyTasks } from '@/services/taskService';
+import {
+  acceptTask,
+  addTaskComment,
+  getMyTasks,
+  getTaskComments,
+  requestTaskChange,
+  updateTaskStatus,
+} from '@/services/taskService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
-import LoadingState from '@/components/ui/LoadingState';
 import Progress from '@/components/ui/Progress';
-import { CheckCircle2, Clock3, CircleDotDashed, MessageSquareWarning, CircleDashed } from 'lucide-react';
+import LoadingState from '@/components/ui/LoadingState';
+import Modal from '@/components/ui/Modal';
+import { CalendarClock, CheckCircle2, Clock3, MessageSquareWarning } from 'lucide-react';
 
-function formatDate(dateStr) {
-  if (!dateStr) return null;
-  return new Date(dateStr).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DUE_SOON_DAYS = 3;
+
+const URGENCY_CONFIG = {
+  OVERDUE: { rank: 0, label: 'Overdue', badge: 'destructive' },
+  DUE_TODAY: { rank: 1, label: 'Due Today', badge: 'warning' },
+  DUE_SOON: { rank: 2, label: 'Due Soon', badge: 'blue' },
+  UPCOMING: { rank: 3, label: 'Upcoming', badge: 'default' },
+  NO_DUE_DATE: { rank: 4, label: 'No Due Date', badge: 'default' },
+};
+
+function dateOnly(dateLike) {
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function statusIcon(status) {
-  const normalized = String(status || '').toUpperCase();
-  if (normalized === 'DONE') return <CheckCircle2 className="w-4 h-4" />;
-  if (normalized === 'IN_PROGRESS') return <CircleDotDashed className="w-4 h-4" />;
-  if (normalized === 'NEGOTIATING' || normalized === 'CHANGE_REQUESTED') return <MessageSquareWarning className="w-4 h-4" />;
-  return <CircleDashed className="w-4 h-4" />;
+function getUrgencyKey(dueDate) {
+  if (!dueDate) return 'NO_DUE_DATE';
+  const due = dateOnly(dueDate);
+  if (!due) return 'NO_DUE_DATE';
+
+  const today = dateOnly(new Date());
+  const diffDays = Math.floor((due.getTime() - today.getTime()) / DAY_MS);
+
+  if (diffDays < 0) return 'OVERDUE';
+  if (diffDays === 0) return 'DUE_TODAY';
+  if (diffDays <= DUE_SOON_DAYS) return 'DUE_SOON';
+  return 'UPCOMING';
+}
+
+function dueSortValue(dueDate) {
+  if (!dueDate) return Number.POSITIVE_INFINITY;
+  const d = new Date(dueDate).getTime();
+  return Number.isNaN(d) ? Number.POSITIVE_INFINITY : d;
+}
+
+function sortByUrgencyThenDate(aDue, bDue) {
+  const aUrgency = URGENCY_CONFIG[getUrgencyKey(aDue)]?.rank ?? 4;
+  const bUrgency = URGENCY_CONFIG[getUrgencyKey(bDue)]?.rank ?? 4;
+  if (aUrgency !== bUrgency) return aUrgency - bUrgency;
+  return dueSortValue(aDue) - dueSortValue(bDue);
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return 'No due date';
+  const value = new Date(dateStr);
+  if (Number.isNaN(value.getTime())) return 'No due date';
+  return value.toLocaleDateString('en-AU', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function normalizeStatus(status) {
+  return String(status || '').toUpperCase();
+}
+
+function statusBadgeVariant(status) {
+  const normalized = normalizeStatus(status);
+  if (normalized === 'DONE') return 'accepted';
+  if (normalized === 'IN_PROGRESS') return 'blue';
+  if (normalized === 'PENDING_ACCEPTANCE') return 'pending';
+  if (normalized === 'NEGOTIATING' || normalized === 'CHANGE_REQUESTED') return 'negotiating';
+  return 'default';
+}
+
+function statusLabel(status) {
+  const normalized = normalizeStatus(status);
+  if (!normalized) return 'Unknown';
+  return normalized
+    .split('_')
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function truncateText(value, max = 120) {
+  const text = String(value || '').trim();
+  if (!text) return 'No description provided.';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trim()}...`;
+}
+
+function normalizeGroupedShape(list) {
+  return list.map((section, index) => {
+    const tasks = Array.isArray(section.tasks) ? section.tasks : [];
+    return {
+      assessment_id: section.assessment_id || `assessment-${index}`,
+      assessment_title: section.assessment_title || 'Unassigned Assessment',
+      group_id: section.group_id || `group-${index}`,
+      group_name: section.group_name || 'Unknown Group',
+      due_date: section.due_date || null,
+      tasks: tasks.map((task, taskIndex) => ({
+        task_id: task.task_id || task.id || `${index}-${taskIndex}`,
+        title: task.title || 'Untitled Task',
+        description: task.description || '',
+        status: task.status || 'TO_DO',
+        priority: task.priority || 'MEDIUM',
+        due_date: task.due_date || null,
+        assessment_title: section.assessment_title || 'Unassigned Assessment',
+        group_name: section.group_name || 'Unknown Group',
+      })),
+    };
+  });
+}
+
+function normalizeFlatShape(list) {
+  const sections = new Map();
+
+  list.forEach((task, index) => {
+    const assessmentId = task.assessment_id || task.assessment_title || `ungrouped-${index}`;
+    const groupId = task.group_id || task.group_name || 'unknown-group';
+    const key = `${assessmentId}::${groupId}`;
+
+    if (!sections.has(key)) {
+      sections.set(key, {
+        assessment_id: task.assessment_id || key,
+        assessment_title: task.assessment_title || 'Unassigned Assessment',
+        group_id: task.group_id || groupId,
+        group_name: task.group_name || 'Unknown Group',
+        due_date: task.assessment_due_date || null,
+        tasks: [],
+      });
+    }
+
+    sections.get(key).tasks.push({
+      task_id: task.task_id || task.id || `${key}-${index}`,
+      title: task.title || 'Untitled Task',
+      description: task.description || '',
+      status: task.status || 'TO_DO',
+      priority: task.priority || 'MEDIUM',
+      due_date: task.due_date || null,
+      assessment_title: task.assessment_title || 'Unassigned Assessment',
+      group_name: task.group_name || 'Unknown Group',
+    });
+  });
+
+  return Array.from(sections.values()).map((section) => {
+    if (!section.due_date) {
+      const earliestTaskDue = section.tasks
+        .map((task) => task.due_date)
+        .filter(Boolean)
+        .sort(sortByUrgencyThenDate)[0];
+      return {
+        ...section,
+        due_date: earliestTaskDue || null,
+      };
+    }
+
+    return section;
+  });
+}
+
+function normalizeMyTasksResponse(payload) {
+  const groupedFromApi = Array.isArray(payload?.data) ? payload.data : null;
+  if (groupedFromApi) {
+    return normalizeGroupedShape(groupedFromApi);
+  }
+
+  const flatList = payload?.data?.tasks || payload?.tasks || [];
+  return normalizeFlatShape(Array.isArray(flatList) ? flatList : []);
 }
 
 export default function MyTasksPage() {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState([]);
+  const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [updatingTaskId, setUpdatingTaskId] = useState(null);
+
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentError, setCommentError] = useState(null);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  const loadMyTasks = useCallback(async () => {
+    try {
+      setError(null);
+      const response = await getMyTasks();
+      setSections(normalizeMyTasksResponse(response));
+    } catch {
+      setError('Unable to load your tasks. Please try again.');
+      setSections([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const data = await getMyTasks();
-        const list = data?.data?.tasks || data?.tasks || [];
-        setTasks(list);
-      } catch {
-        setError('Failed to load your tasks. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    loadMyTasks();
+  }, [loadMyTasks]);
 
-    load();
+  const sortedSections = useMemo(() => {
+    return sections
+      .map((section) => {
+        const sortedTasks = [...section.tasks].sort((a, b) => sortByUrgencyThenDate(a.due_date, b.due_date));
+        const doneCount = sortedTasks.filter((task) => normalizeStatus(task.status) === 'DONE').length;
+
+        return {
+          ...section,
+          tasks: sortedTasks,
+          doneCount,
+          totalCount: sortedTasks.length,
+          urgencyKey: getUrgencyKey(section.due_date),
+        };
+      })
+      .sort((a, b) => sortByUrgencyThenDate(a.due_date, b.due_date));
+  }, [sections]);
+
+  const totalTaskCount = sortedSections.reduce((count, section) => count + section.tasks.length, 0);
+
+  const loadComments = useCallback(async (taskId) => {
+    setCommentsLoading(true);
+    setCommentError(null);
+    try {
+      const response = await getTaskComments(taskId);
+      setComments(response?.data?.comments || response?.comments || []);
+    } catch {
+      setCommentError('Unable to load comments. Please try again.');
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
   }, []);
 
-  const taskProgressValue = (task) => {
-    const normalized = String(task.status || '').toUpperCase();
-    if (normalized === 'DONE') return 100;
-    if (normalized === 'IN_PROGRESS') return 55;
-    if (normalized === 'PENDING_ACCEPTANCE') return 15;
-    if (normalized === 'NEGOTIATING' || normalized === 'CHANGE_REQUESTED') return 25;
-    return 10;
+  const openCommentsModal = async (task) => {
+    setSelectedTask(task);
+    setCommentDraft('');
+    setIsCommentsOpen(true);
+    await loadComments(task.task_id);
   };
 
-  const priorityConfig = (priority) => {
-    const normalized = String(priority || 'MEDIUM').toUpperCase();
-    if (normalized === 'HIGH') return { label: 'High', variant: 'destructive' };
-    if (normalized === 'LOW') return { label: 'Low', variant: 'default' };
-    return { label: 'Medium', variant: 'warning' };
+  const closeCommentsModal = () => {
+    setIsCommentsOpen(false);
+    setSelectedTask(null);
+    setComments([]);
+    setCommentDraft('');
+    setCommentError(null);
   };
 
-  const accountabilityBadge = (task) => {
-    const normalized = String(task.status || '').toUpperCase();
-    if (normalized === 'DONE') return { label: 'Completed', variant: 'accepted' };
-    if (task.due_date && new Date(task.due_date) < new Date() && normalized !== 'DONE') {
-      return { label: 'Overdue', variant: 'destructive' };
+  const submitComment = async () => {
+    if (!selectedTask?.task_id) return;
+    const text = commentDraft.trim();
+    if (!text) return;
+
+    setSubmittingComment(true);
+    setCommentError(null);
+    try {
+      await addTaskComment(selectedTask.task_id, text);
+      setCommentDraft('');
+      await loadComments(selectedTask.task_id);
+    } catch {
+      setCommentError('Unable to post comment. Please try again.');
+    } finally {
+      setSubmittingComment(false);
     }
-    if (task.is_signed) return { label: 'Accepted', variant: 'accepted' };
-    if (normalized === 'PENDING_ACCEPTANCE') return { label: 'Pending Acknowledgement', variant: 'warning' };
-    return { label: 'Awaiting Approval', variant: 'default' };
   };
 
-  const today = useMemo(() => {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    return date;
-  }, []);
-
-  const taskSummary = useMemo(() => {
-    const pending = tasks.filter((task) => String(task.status || '').toUpperCase() === 'PENDING_ACCEPTANCE').length;
-    const completed = tasks.filter((task) => String(task.status || '').toUpperCase() === 'DONE').length;
-    const overdue = tasks.filter((task) => {
-      const due = task.due_date ? new Date(task.due_date) : null;
-      return task.status !== 'DONE' && due instanceof Date && !Number.isNaN(due.getTime()) && due < today;
-    }).length;
-    const total = tasks.length;
-    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const highPriority = tasks.filter((task) => String(task.priority || '').toUpperCase() === 'HIGH' && String(task.status || '').toUpperCase() !== 'DONE');
-    const dueSoon = tasks.filter((task) => {
-      const due = task.due_date ? new Date(task.due_date) : null;
-      return task.status !== 'DONE' && due instanceof Date && !Number.isNaN(due.getTime()) && due >= today && due <= new Date(today.getTime() + 1000 * 60 * 60 * 24 * 3);
-    }).length;
-
-    return { pending, completed, overdue, completionRate, highPriority, dueSoon, total };
-  }, [tasks, today]);
-
-  const kanbanColumns = useMemo(() => {
-    const normalizedStatus = (task) => String(task.status || '').toUpperCase();
-
-    return [
-      {
-        id: 'TO_DO',
-        title: 'To Do',
-        tasks: tasks.filter((task) => {
-          const status = normalizedStatus(task);
-          return status === 'TO_DO' || status === 'PENDING_ACCEPTANCE' || status === 'NEGOTIATING' || status === 'CHANGE_REQUESTED';
-        }),
-      },
-      {
-        id: 'IN_PROGRESS',
-        title: 'In Progress',
-        tasks: tasks.filter((task) => normalizedStatus(task) === 'IN_PROGRESS'),
-      },
-      {
-        id: 'DONE',
-        title: 'Done',
-        tasks: tasks.filter((task) => normalizedStatus(task) === 'DONE'),
-      },
-    ];
-  }, [tasks]);
-
-  const aiRecommendations = useMemo(() => {
-    const recs = [];
-    if (taskSummary.highPriority.length > 0) {
-      recs.push(`You have ${taskSummary.highPriority.length} high-priority task${taskSummary.highPriority.length === 1 ? '' : 's'} that still needs attention.`);
+  const handleAcceptTask = async (taskId) => {
+    setUpdatingTaskId(taskId);
+    setActionError(null);
+    try {
+      await acceptTask(taskId);
+      await loadMyTasks();
+    } catch {
+      setActionError('Unable to update task status. Please try again.');
+    } finally {
+      setUpdatingTaskId(null);
     }
-    if (taskSummary.overdue > 0) {
-      recs.push(`There are ${taskSummary.overdue} overdue task${taskSummary.overdue === 1 ? '' : 's'}. Tackle one during your next study block.`);
+  };
+
+  const handleRequestTaskChange = async (taskId) => {
+    const reason = window.prompt('Optionally add a reason for this change request:', '');
+    if (reason === null) return;
+
+    setUpdatingTaskId(taskId);
+    setActionError(null);
+    try {
+      await requestTaskChange(taskId, { reason: reason.trim() });
+      await loadMyTasks();
+    } catch {
+      setActionError('Unable to request change. Please try again.');
+    } finally {
+      setUpdatingTaskId(null);
     }
-    if (taskSummary.dueSoon > 0) {
-      recs.push(`${taskSummary.dueSoon} task${taskSummary.dueSoon === 1 ? '' : 's'} are due within 3 days. Prioritise them first.`);
+  };
+
+  const handleUpdateTaskStatus = async (taskId, status) => {
+    setUpdatingTaskId(taskId);
+    setActionError(null);
+    try {
+      await updateTaskStatus(taskId, status);
+      await loadMyTasks();
+    } catch {
+      setActionError('Unable to update task status. Please try again.');
+    } finally {
+      setUpdatingTaskId(null);
     }
-    if (taskSummary.pending > 0) {
-      recs.push(`Resolve ${taskSummary.pending} pending acknowledgement${taskSummary.pending === 1 ? '' : 's'} to free up team coordination.`);
-    }
-    if (recs.length === 0) {
-      recs.push('Your current workload is balanced. Keep moving forward with your next deliverable.');
-    }
-    return recs.slice(0, 4);
-  }, [taskSummary]);
+  };
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto mt-6">
-        <LoadingState message="Loading your productivity workspace..." />
+        <LoadingState message="Loading your tasks..." />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto py-4">
-      <div className="space-y-3">
+    <div className="space-y-5 max-w-6xl mx-auto">
+      <div className="space-y-1">
         <p className="sg-eyebrow">Personal Task View</p>
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h2 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">My Tasks</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Tasks assigned to {user?.full_name || user?.email || 'you'} with accountability, priority, and progress clearly surfaced.
-            </p>
-          </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">My Tasks</h2>
+        <p className="text-slate-500 dark:text-slate-400">
+          Tasks assigned to {user?.full_name || user?.email || 'you'}.
+        </p>
+      </div>
+
+      {error && (
+        <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
+          Unable to load your tasks. Please try again.
         </div>
-      </div>
+      )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-slate-200/70 dark:border-slate-800">
-          <CardContent className="space-y-3 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Pending Tasks</p>
-            <p className="text-3xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.pending}</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Awaiting acknowledgement or review.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-200/70 dark:border-slate-800">
-          <CardContent className="space-y-3 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Completed Tasks</p>
-            <p className="text-3xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.completed}</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Tasks finished by you this cycle.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-200/70 dark:border-slate-800">
-          <CardContent className="space-y-3 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Overdue Tasks</p>
-            <p className="text-3xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.overdue}</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Tasks that need immediate follow-up.</p>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-200/70 dark:border-slate-800">
-          <CardContent className="space-y-3 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Completion Rate</p>
-            <p className="text-3xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.completionRate}%</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Of {taskSummary.total} total tasks.</p>
-          </CardContent>
-        </Card>
-      </div>
+      {!error && actionError && (
+        <div className="px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 text-sm">
+          {actionError}
+        </div>
+      )}
 
-      <div className="grid gap-6 xl:grid-cols-[2fr_0.9fr]">
+      {!error && totalTaskCount === 0 ? (
+        <Card>
+          <CardContent className="py-14 text-center text-slate-500 dark:text-slate-400">
+            <p className="text-base font-medium">No tasks assigned to you yet. Once your team assigns responsibilities, they will appear here.</p>
+          </CardContent>
+        </Card>
+      ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-3">
-            {kanbanColumns.map((column) => (
-              <Card key={column.id} className="border-slate-200/70 dark:border-slate-800">
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <CardTitle>{column.title}</CardTitle>
-                      <CardDescription>{column.tasks.length} task{column.tasks.length === 1 ? '' : 's'}</CardDescription>
+          {sortedSections.map((section) => {
+            const urgency = URGENCY_CONFIG[section.urgencyKey] || URGENCY_CONFIG.NO_DUE_DATE;
+            const progressValue = section.totalCount > 0 ? (section.doneCount / section.totalCount) * 100 : 0;
+
+            return (
+              <Card key={`${section.assessment_id}-${section.group_id}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1 min-w-0">
+                      <CardTitle className="text-lg truncate">{section.assessment_title}</CardTitle>
+                      <CardDescription className="text-sm">
+                        {section.group_name}
+                      </CardDescription>
                     </div>
-                    <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      {column.tasks.length}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <Badge variant={urgency.badge}>{urgency.label}</Badge>
+                      <div className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                        <CalendarClock className="w-3.5 h-3.5" />
+                        {formatDate(section.due_date)}
+                      </div>
                     </div>
                   </div>
+
+                  <Progress
+                    value={progressValue}
+                    max={100}
+                    showPercent
+                    label={`${section.doneCount}/${section.totalCount} tasks completed`}
+                    className="pt-1"
+                  />
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  {column.tasks.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50 p-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                      No tasks in this column yet.
-                    </div>
-                  ) : (
-                    column.tasks.map((task) => {
-                      const badge = accountabilityBadge(task);
-                      const priority = priorityConfig(task.priority);
-                      return (
-                        <div key={task.task_id} className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/70 p-4 shadow-sm">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-slate-500 dark:text-slate-400">{statusIcon(task.status)}</span>
-                                <p className="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">{task.title}</p>
-                              </div>
-                              {task.description && (
-                                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 line-clamp-2">{task.description}</p>
-                              )}
+
+                <CardContent className="space-y-2.5">
+                  {section.tasks.map((task) => {
+                    const status = normalizeStatus(task.status);
+                    const taskUrgency = URGENCY_CONFIG[getUrgencyKey(task.due_date)] || URGENCY_CONFIG.NO_DUE_DATE;
+                    const isUpdating = updatingTaskId === task.task_id;
+                    const priority = String(task.priority || 'MEDIUM').toUpperCase();
+
+                    return (
+                      <div
+                        key={task.task_id}
+                        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-3"
+                      >
+                        <div className="flex flex-col gap-2.5 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center flex-wrap gap-2">
+                              <p className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">{task.title}</p>
+                              <Badge variant={statusBadgeVariant(status)}>{statusLabel(status)}</Badge>
+                              <Badge variant={taskUrgency.badge}>{taskUrgency.label}</Badge>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant={badge.variant}>{badge.label}</Badge>
-                              <Badge variant={priority.variant}>{priority.label}</Badge>
-                            </div>
-                          </div>
-                          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                            {task.due_date && (
+
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {task.assessment_title || section.assessment_title} · {task.group_name || section.group_name}
+                            </p>
+
+                            <p className="text-sm text-slate-600 dark:text-slate-300">
+                              {truncateText(task.description)}
+                            </p>
+
+                            <div className="flex items-center flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                               <span className="inline-flex items-center gap-1">
                                 <Clock3 className="w-3 h-3" />
                                 Due {formatDate(task.due_date)}
                               </span>
-                            )}
-                            <span>{task.group_name || 'Team workspace'}</span>
-                            <span>Assigned to {task.assigned_to_name || task.assigned_to_email || 'you'}</span>
-                          </div>
-                          <div className="mt-4 space-y-2">
-                            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                              <span>Progress</span>
-                              <span>{taskProgressValue(task)}%</span>
+                              <span>Priority: {priority}</span>
                             </div>
-                            <Progress value={taskProgressValue(task)} className="h-2 rounded-full" />
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 md:justify-end">
+                            {status === 'PENDING_ACCEPTANCE' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="teal"
+                                  onClick={() => handleAcceptTask(task.task_id)}
+                                  disabled={isUpdating}
+                                >
+                                  Accept Responsibility
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleRequestTaskChange(task.task_id)}
+                                  disabled={isUpdating}
+                                >
+                                  Request Change
+                                </Button>
+                              </>
+                            )}
+
+                            {status === 'TO_DO' && (
+                              <Button
+                                size="sm"
+                                variant="teal"
+                                onClick={() => handleUpdateTaskStatus(task.task_id, 'IN_PROGRESS')}
+                                disabled={isUpdating}
+                              >
+                                Start Task
+                              </Button>
+                            )}
+
+                            {status === 'IN_PROGRESS' && (
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={() => handleUpdateTaskStatus(task.task_id, 'DONE')}
+                                disabled={isUpdating}
+                              >
+                                Mark Done
+                              </Button>
+                            )}
+
+                            {status === 'DONE' && (
+                              <Badge variant="accepted" className="h-fit"> 
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                Completed
+                              </Badge>
+                            )}
+
+                            {(status === 'NEGOTIATING' || status === 'CHANGE_REQUESTED') && (
+                              <Badge variant="negotiating" className="h-fit">
+                                Change Requested
+                              </Badge>
+                            )}
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openCommentsModal(task)}
+                              disabled={isUpdating}
+                            >
+                              <MessageSquareWarning className="w-3.5 h-3.5" />
+                              View Comments
+                            </Button>
                           </div>
                         </div>
-                      );
-                    })
-                  )}
+                      </div>
+                    );
+                  })}
                 </CardContent>
               </Card>
-            ))}
+            );
+          })}
+        </div>
+      )}
+
+      <Modal
+        isOpen={isCommentsOpen}
+        onClose={closeCommentsModal}
+        title={selectedTask ? `Comments: ${selectedTask.title}` : 'Task Comments'}
+      >
+        <div className="space-y-4">
+          {commentsLoading ? (
+            <LoadingState message="Loading comments..." />
+          ) : (
+            <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+              {comments.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No comments yet.</p>
+              ) : (
+                comments.map((comment) => (
+                  <div
+                    key={comment.comment_id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2"
+                  >
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {comment.full_name || comment.email || 'Team member'}
+                    </p>
+                    <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">{comment.comment_text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {commentError && (
+            <p className="text-sm text-red-700 dark:text-red-400">{commentError}</p>
+          )}
+
+          <div className="space-y-2">
+            <textarea
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              placeholder="Add a comment..."
+              className="w-full min-h-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="teal"
+                onClick={submitComment}
+                disabled={submittingComment || !commentDraft.trim()}
+              >
+                {submittingComment ? 'Posting...' : 'Post Comment'}
+              </Button>
+            </div>
           </div>
         </div>
-
-        <div className="space-y-4">
-          <Card className="border-slate-200/70 dark:border-slate-800">
-            <CardHeader>
-              <CardTitle>Productivity Snapshot</CardTitle>
-              <CardDescription>A quick look at your performance and workload balance.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 p-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Finished</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.completed}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Due Soon</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.dueSoon}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Average Pace</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.completionRate}%</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total Tasks</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{taskSummary.total}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200/70 dark:border-slate-800">
-            <CardHeader>
-              <CardTitle>AI Recommendations</CardTitle>
-              <CardDescription>Suggested actions to improve your current workflow.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 p-4">
-              {aiRecommendations.map((tip, index) => (
-                <div key={index} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-3 text-sm text-slate-700 dark:text-slate-300">
-                  {tip}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      </Modal>
     </div>
   );
 }
