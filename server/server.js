@@ -15,18 +15,34 @@ const contributionRoutes = require('./routes/contributionRoutes');
 
 const app = express();
 
-const allowedOrigins = [
-  process.env.CLIENT_URL || "http://localhost:3000",
-  "http://127.0.0.1:3000",
-];
+const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
+const extraClientUrls = (process.env.CLIENT_URLS || "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+const allowVercelPreviews = String(process.env.ALLOW_VERCEL_PREVIEWS || "true").toLowerCase() === "true";
+
+const allowedOrigins = [clientUrl, ...extraClientUrls];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
+      if (!origin) {
+        callback(null, true);
+        return;
       }
-      return callback(new Error("Not allowed by CORS"));
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowVercelPreviews && /\.vercel\.app$/i.test(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
@@ -46,7 +62,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "healthy",
     project: "SmartGroup",
-    frontend: process.env.CLIENT_URL || "http://localhost:3000",
+    frontend: clientUrl,
     timestamp: new Date().toISOString(),
   });
 });
