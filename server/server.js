@@ -3,6 +3,8 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 
+dotenv.config();
+
 const authRoutes = require('./routes/authRoutes');
 const groupRoutes = require('./routes/groupRoutes');
 const taskRoutes = require('./routes/taskRoutes');
@@ -10,8 +12,6 @@ const aiRoutes = require('./routes/aiRoutes');
 const charterRoutes = require('./routes/charterRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const contributionRoutes = require('./routes/contributionRoutes');
-
-dotenv.config();
 
 const app = express();
 
@@ -75,7 +75,7 @@ app.use('/api/charters', charterRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contributions', contributionRoutes);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 app.listen(PORT, () => {
   console.log(`SmartGroup server running on port ${PORT}`);

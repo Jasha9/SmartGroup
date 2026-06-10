@@ -1,7 +1,5 @@
 const OpenAI = require("openai");
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const SYSTEM_PROMPT = `You are a project planning assistant for university group assignments.
 Given an assignment description, generate a practical task breakdown for a student team.
 Respond ONLY with a valid JSON array of tasks — no markdown, no explanation, no code fences.
@@ -12,6 +10,13 @@ Each task must have exactly these fields:
   estimated_hours (number, 1–8),
   status ("TO_DO").
 Generate between 4 and 8 tasks.`;
+
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
+  }
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 async function generateTasks(req, res) {
   const { assignmentText } = req.body;
@@ -26,6 +31,7 @@ async function generateTasks(req, res) {
 
   let completion;
   try {
+    const openai = getOpenAIClient();
     completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
