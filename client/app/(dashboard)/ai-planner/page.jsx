@@ -60,6 +60,7 @@ export default function AIPlannerPage() {
   const [membersLoading, setMembersLoading] = useState(false);
 
   const [generatedTasks, setGeneratedTasks] = useState([]);
+  const [planOutput, setPlanOutput] = useState(null);
   const [loading, setLoading] = useState(false);
   const [processingIndex, setProcessingIndex] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -114,12 +115,14 @@ export default function AIPlannerPage() {
   const completionPct = useMemo(() => Math.round((step / STEPS.length) * 100), [step]);
 
   const planSummary = useMemo(() => {
-    if (generatedTasks.length === 0) return null;
+    if (!planOutput || generatedTasks.length === 0) return null;
+
     const taskCount = generatedTasks.length;
     const totalHours = generatedTasks.reduce((sum, task) => sum + (task.estimated_hours || 1), 0);
-    const riskLevel = generatedTasks.some((task) => task.priority === 'HIGH') ? 'Elevated' : 'Balanced';
-    const milestones = generatedTasks.slice(0, 3).map((task) => task.title || 'Milestone');
+    const riskLevel = planOutput.fairnessScore !== undefined ? (planOutput.fairnessScore < 85 ? 'Elevated' : 'Balanced') : generatedTasks.some((task) => task.priority === 'HIGH') ? 'Elevated' : 'Balanced';
+    const milestones = planOutput.milestones?.length > 0 ? planOutput.milestones.map((milestone) => milestone.title) : generatedTasks.slice(0, 3).map((task) => task.title || 'Milestone');
     const recommendations = [];
+
     if (riskLevel === 'Elevated') {
       recommendations.push('Focus first on high-priority tasks to reduce risk.');
     }
@@ -135,8 +138,12 @@ export default function AIPlannerPage() {
       riskLevel,
       milestones,
       recommendations,
+      fairnessScore: planOutput.fairnessScore,
+      deliverables: planOutput.deliverables || [],
+      teamSize: planOutput.workloadSummary?.teamSize || members.length,
+      targetHoursPerMember: planOutput.workloadSummary?.targetHoursPerMember || Math.round((totalHours / Math.max(1, members.length)) * 10) / 10,
     };
-  }, [generatedTasks]);
+  }, [generatedTasks, planOutput, members.length]);
 
   const handleFileUpload = (file) => {
     if (!file) return;
@@ -185,6 +192,7 @@ export default function AIPlannerPage() {
     setLoading(true);
     setError('');
     setSaveSuccess(false);
+    setPlanOutput(null);
     setStep(4);
     setAssistantNote('Generating your AI plan. This may take a moment.');
     setProcessingIndex(0);
@@ -195,22 +203,34 @@ export default function AIPlannerPage() {
 
     try {
       const assignmentText = inputMode === 'upload' ? `Assessment document: ${uploadedFile?.name}` : promptText;
-      const data = await generateTasks(assignmentText);
-      const rawTasks = data?.data?.tasks || [];
+      const data = await generateTasks({
+        assignmentText,
+        groupSize: members.length,
+        assessmentTitle: assessmentTitle.trim(),
+        assessmentDueDate,
+      });
+      const plan = data?.data || {};
+      const rawTasks = plan.tasks || [];
       const normalized = rawTasks.map((task, index) => ({
         id: index,
         title: task.title || `Task ${index + 1}`,
         description: task.description || '',
         priority: task.priority || 'MEDIUM',
-        estimated_hours: task.estimated_hours || 2,
-        suggested_due_date: calculateSuggestedDueDate(assessmentDueDate, index, rawTasks.length),
+        estimated_hours: task.effortHours || task.estimated_hours || 2,
+        due_date: task.dueDate || task.due_date || null,
+        category: task.category || '',
+        dependsOn: task.dependsOn || task.depends_on || [],
+        assessmentSection: task.assessmentSection || task.assessment_section || '',
+        suggestedOwner: task.suggestedOwner || task.suggested_owner || '',
+        assignmentReason: task.assignmentReason || task.assignment_reason || '',
         status: 'TO_DO',
         assigned_to_email: '',
       }));
 
+      setPlanOutput(plan);
       setGeneratedTasks(normalized);
-      setStep(5);
-      setAssistantNote('AI plan ready. Review the summary and move to task assignment.');
+      setStep(6);
+      setAssistantNote('AI plan ready. Review the summary and assign tasks below.');
     } catch (err) {
       setError(err.message || 'Failed to generate tasks. Please try again.');
       setAssistantNote('AI planning failed. Adjust your brief or try again.');
@@ -483,7 +503,7 @@ export default function AIPlannerPage() {
                   setPromptText(e.target.value);
                   if (step < 3) setStep(3);
                 }}
-                placeholder="Paste the assignment brief here..."
+                placeholder="Paste the assignment brief here; for marketing/campaign tasks include roles, deliverables, and campaign outputs like SWOT, personas, media framework, messaging hooks, budget, KPI targets, and charter PDF."
                 className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-teal-400"
               />
             )}
@@ -552,8 +572,9 @@ export default function AIPlannerPage() {
                 <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{planSummary.taskCount}</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Risk level</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{planSummary.riskLevel}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Fairness score</p>
+                <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{planSummary.fairnessScore != null ? `${planSummary.fairnessScore}%` : 'Pending'}</p>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Balanced workload across team members.</p>
               </div>
             </div>
 

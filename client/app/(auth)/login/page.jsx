@@ -101,8 +101,9 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogleError = () => {
-    alert('Google login failed.');
+  const handleGoogleError = (error) => {
+    console.error('Google login failed:', error);
+    alert('Google login failed. Please try again.');
   };
 
   return (
