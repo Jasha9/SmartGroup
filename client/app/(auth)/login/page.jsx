@@ -271,7 +271,7 @@ export default function LoginPage() {
                 <Play className="h-10 w-10" />
               </div>
               <p className="mt-6 text-xl font-semibold text-slate-950 dark:text-white">Demo video coming soon</p>
-              <p className="mt-3 max-w-2xl mx-auto text-sm leading-6 text-slate-600 dark:text-slate-400">
+              <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
                 We will add our walkthrough video here to explain how SmartGroup helps student teams manage group work.
               </p>
             </div>
@@ -353,7 +353,7 @@ export default function LoginPage() {
               </div>
               <div className="space-y-1">
                 <p className="font-medium text-slate-950 dark:text-white">Contact</p>
-                <a href="mailto:smartgroup.notify@gmail.com" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                <a href="mailto:smartgroup.notify@gmail.com" className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
                   smartgroup.notify@gmail.com
                 </a>
               </div>
@@ -373,8 +373,9 @@ export default function LoginPage() {
             ) : (
               <form onSubmit={handleDemoSubmit} className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Your name</label>
+                  <label htmlFor="demo-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Your name</label>
                   <input
+                    id="demo-name"
                     type="text"
                     value={demoForm.name}
                     onChange={handleDemoChange('name')}
@@ -384,8 +385,9 @@ export default function LoginPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
+                  <label htmlFor="demo-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
                   <input
+                    id="demo-email"
                     type="email"
                     value={demoForm.email}
                     onChange={handleDemoChange('email')}
@@ -395,8 +397,9 @@ export default function LoginPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Message</label>
+                  <label htmlFor="demo-message" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Message</label>
                   <textarea
+                    id="demo-message"
                     value={demoForm.message}
                     onChange={handleDemoChange('message')}
                     placeholder="Tell us what you'd like to see in the demo."
