@@ -1,108 +1,137 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { getGroups } from '@/services/groupService';
-import { getContributions } from '@/services/contributionService';
+import { useEffect, useMemo, useState } from 'react';
+import { getGroups, getGroupAssessments, getGroupMembers } from '@/services/groupService';
 import { getTasks } from '@/services/taskService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import LoadingState from '@/components/ui/LoadingState';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Trophy, TrendingUp, Scale, ShieldCheck } from 'lucide-react';
+import Progress from '@/components/ui/Progress';
 
-function getInitials(name) {
-  if (!name) return '?';
-  return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+function normalizeStatus(status) {
+  return String(status || 'TO_DO').toUpperCase();
 }
 
-function getHealth(pct) {
-  if (pct >= 80) return 'excellent';
-  if (pct >= 60) return 'good';
-  return 'fair';
+function safeName(member) {
+  return member.full_name || member.email || 'Member';
 }
 
 export default function ContributionDashboardPage() {
-  const { user } = useAuth();
-  const [members, setMembers] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [summary, setSummary] = useState({ teamAvg: 0, totalCompleted: 0, totalOverdue: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sections, setSections] = useState([]);
 
   useEffect(() => {
-    async function fetchData() {
+    async function loadData() {
       try {
-        const groupsData = await getGroups();
-        const groups = groupsData?.data?.groups || groupsData?.groups || [];
-        if (groups.length === 0) {
-          setLoading(false);
-          return;
+        setError(null);
+        const groupsRes = await getGroups();
+        const groups = groupsRes?.data?.groups || groupsRes?.groups || [];
+
+        const built = [];
+
+        for (const group of groups) {
+          const groupId = group.group_id || group.id;
+          const groupName = group.group_name || group.name || 'Unknown Group';
+
+          const [membersRes, assessmentsRes, tasksRes] = await Promise.all([
+            getGroupMembers(groupId),
+            getGroupAssessments(groupId),
+            getTasks(groupId),
+          ]);
+
+          const members = membersRes?.data?.members || membersRes?.members || [];
+          const assessments = assessmentsRes?.data?.assessments || assessmentsRes?.assessments || [];
+          const tasks = tasksRes?.data?.tasks || tasksRes?.tasks || [];
+
+          assessments.forEach((assessment) => {
+            const assessmentId = assessment.assessment_id;
+            const assessmentTasks = tasks.filter((task) => task.assessment_id === assessmentId);
+
+            const memberRows = members.map((member) => {
+              const assigned = assessmentTasks.filter(
+                (task) =>
+                  task.assigned_to_email === member.email ||
+                  task.assigned_to_name === member.full_name ||
+                  task.assigned_to_user_id === member.user_id
+              );
+
+              const todo = assigned.filter((task) => normalizeStatus(task.status) === 'TO_DO').length;
+              const inProgress = assigned.filter((task) => normalizeStatus(task.status) === 'IN_PROGRESS').length;
+              const done = assigned.filter((task) => normalizeStatus(task.status) === 'DONE').length;
+              const total = todo + inProgress + done;
+              const completion = total > 0 ? Math.round((done / total) * 100) : 0;
+
+              return {
+                user_id: member.user_id,
+                name: safeName(member),
+                todo,
+                inProgress,
+                done,
+                total,
+                completion,
+              };
+            });
+
+            const totals = {
+              todo: assessmentTasks.filter((task) => normalizeStatus(task.status) === 'TO_DO').length,
+              inProgress: assessmentTasks.filter((task) => normalizeStatus(task.status) === 'IN_PROGRESS').length,
+              done: assessmentTasks.filter((task) => normalizeStatus(task.status) === 'DONE').length,
+            };
+
+            built.push({
+              groupId,
+              groupName,
+              assessmentId,
+              assessmentTitle: assessment.title || 'Untitled Assessment',
+              dueDate: assessment.due_date,
+              memberRows: memberRows.filter((row) => row.total > 0),
+              totals,
+            });
+          });
         }
-        const groupId = groups[0].group_id || groups[0].id;
 
-        const [contribData, taskData] = await Promise.all([
-          getContributions(groupId),
-          getTasks(groupId),
-        ]);
-
-        const d = contribData?.data || {};
-        setMembers(d.contributions || []);
-        setSummary(d.summary || { teamAvg: 0, totalCompleted: 0, totalOverdue: 0 });
-        setTasks(taskData?.data?.tasks || taskData?.tasks || []);
+        setSections(built);
       } catch {
-        setError('Failed to load team insights. Please try again.');
+        setError('Failed to load team progress. Please try again.');
       } finally {
         setLoading(false);
       }
     }
-    fetchData();
+
+    loadData();
   }, []);
 
-  const topContributor = useMemo(() => {
-    if (members.length === 0) return null;
-    return [...members].sort((a, b) => b.percentage - a.percentage)[0];
-  }, [members]);
+  const overall = useMemo(() => {
+    const totals = sections.reduce(
+      (acc, section) => {
+        acc.todo += section.totals.todo;
+        acc.inProgress += section.totals.inProgress;
+        acc.done += section.totals.done;
+        return acc;
+      },
+      { todo: 0, inProgress: 0, done: 0 }
+    );
 
-  const workloadData = useMemo(() => {
-    return members.map((m) => {
-      const assigned = tasks.filter((t) => t.assigned_to_email === m.email || t.assigned_to_name === m.full_name);
-      return {
-        name: m.full_name ? m.full_name.split(' ')[0] : m.email?.split('@')[0] || 'Member',
-        inProgress: assigned.filter((t) => t.status === 'IN_PROGRESS').length,
-        todo: assigned.filter((t) => t.status === 'TO_DO').length,
-        done: assigned.filter((t) => t.status === 'DONE').length,
-      };
-    });
-  }, [members, tasks]);
-
-  const trendData = useMemo(() => {
-    const done = tasks.filter((t) => t.status === 'DONE').length;
-    const active = tasks.filter((t) => t.status !== 'DONE').length;
-    const overdue = tasks.filter((t) => t.status !== 'DONE' && t.due_date && new Date(t.due_date) < new Date()).length;
-
-    return [
-      { label: 'Current', completion: done, active, overdue },
-      { label: 'Forecast', completion: done + Math.max(1, Math.round(active * 0.4)), active: Math.max(0, active - Math.round(active * 0.4)), overdue: Math.max(0, overdue - 1) },
-    ];
-  }, [tasks]);
+    const total = totals.todo + totals.inProgress + totals.done;
+    const completion = total > 0 ? Math.round((totals.done / total) * 100) : 0;
+    return { ...totals, total, completion };
+  }, [sections]);
 
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto mt-6">
-        <LoadingState message="Loading team insights..." />
+        <LoadingState message="Loading team progress..." />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <div>
-        <p className="sg-eyebrow">Accountability Intelligence</p>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">Team Progress</h2>
-        <p className="text-slate-500 dark:text-slate-400 mt-1">
-          Accountability scores, workload balance, and team health analytics.
-        </p>
+      <div className="space-y-1">
+        <p className="sg-eyebrow">Team Insights</p>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Team Progress</h2>
+        <p className="text-slate-500 dark:text-slate-400">Grouped by Group → Assessment → Member progress.</p>
       </div>
 
       {error && (
@@ -111,169 +140,112 @@ export default function ContributionDashboardPage() {
         </div>
       )}
 
-      {!error && members.length === 0 && (
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
-          <div className="py-16 text-center text-slate-500 dark:text-slate-400">
-            <p className="text-lg font-medium">Complete tasks to unlock team insights.</p>
-          </div>
+          <CardContent className="pt-5">
+            <p className="text-xs text-slate-500 dark:text-slate-400">To Do</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.todo}</p>
+          </CardContent>
         </Card>
-      )}
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-slate-500 dark:text-slate-400">In Progress</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.inProgress}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-slate-500 dark:text-slate-400">Done</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.done}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-slate-500 dark:text-slate-400">Completion</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.completion}%</p>
+          </CardContent>
+        </Card>
+      </div>
 
-      {members.length > 0 && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-teal-50 dark:bg-teal-900/20">
-                    <ShieldCheck className="w-5 h-5 text-teal-600 dark:text-teal-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{summary.teamAvg}%</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Team Health Score</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20">
-                    <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{summary.totalCompleted}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Task Completion Volume</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-900/20">
-                    <Scale className="w-5 h-5 text-amber-600 dark:text-amber-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{summary.totalOverdue}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Workload Risk Alerts</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Overall Progress</CardTitle>
+          <CardDescription>Completion across all groups and assessments.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Progress value={overall.completion} variant="teal" />
+          <div className="h-2 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex">
+            <div className="bg-slate-400" style={{ width: `${overall.total > 0 ? (overall.todo / overall.total) * 100 : 0}%` }} />
+            <div className="bg-teal-500" style={{ width: `${overall.total > 0 ? (overall.inProgress / overall.total) * 100 : 0}%` }} />
+            <div className="bg-emerald-500" style={{ width: `${overall.total > 0 ? (overall.done / overall.total) * 100 : 0}%` }} />
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Contribution Distribution</CardTitle>
-                <CardDescription>Completed tasks by team member.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart
-                    data={members.map((m) => ({
-                      name: m.full_name ? m.full_name.split(' ')[0] : m.email?.split('@')[0] || 'Member',
-                      completed: m.completed,
-                    }))}
-                    barSize={30}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} />
-                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} allowDecimals={false} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#fff',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                      }}
-                    />
-                    <Bar dataKey="completed" fill="#14b8a6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Accountability</CardTitle>
-                <CardDescription>Highest accountability score</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {topContributor && (
-                  <div className="flex flex-col items-center text-center py-2">
-                    <div className="relative mb-4">
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-teal-500 to-indigo-500 flex items-center justify-center text-white text-xl font-bold">
-                        {getInitials(topContributor.full_name || topContributor.email)}
-                      </div>
-                      <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center">
-                        <Trophy className="w-3.5 h-3.5 text-white" />
-                      </div>
+      {sections.length === 0 ? (
+        <Card>
+          <CardContent className="py-14 text-center text-slate-500 dark:text-slate-400">
+            No assessment progress data yet.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {sections.map((section) => {
+            const total = section.totals.todo + section.totals.inProgress + section.totals.done;
+            const completion = total > 0 ? Math.round((section.totals.done / total) * 100) : 0;
+            return (
+              <Card key={`${section.groupId}-${section.assessmentId}`}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-lg">{section.assessmentTitle}</CardTitle>
+                      <CardDescription>{section.groupName}</CardDescription>
                     </div>
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">
-                      {topContributor.full_name || topContributor.email}
-                      {user && (topContributor.user_id === user.user_id || topContributor.email === user.email) ? ' (You)' : ''}
-                    </p>
-                    <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-300 mt-1">{topContributor.percentage}%</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{topContributor.completed} tasks completed</p>
-                    <div className="mt-3">
-                      <Badge variant={getHealth(topContributor.percentage) === 'excellent' ? 'accepted' : getHealth(topContributor.percentage) === 'good' ? 'blue' : 'warning'}>
-                        {getHealth(topContributor.percentage).toUpperCase()}
-                      </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="default">To Do {section.totals.todo}</Badge>
+                      <Badge variant="blue">In Progress {section.totals.inProgress}</Badge>
+                      <Badge variant="accepted">Done {section.totals.done}</Badge>
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Task Completion Trends</CardTitle>
-                <CardDescription>Current vs short-term forecast.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={trendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#64748b' }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="completion" stroke="#14b8a6" strokeWidth={3} dot={{ r: 4 }} />
-                    <Line type="monotone" dataKey="active" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="overdue" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Workload Balance</CardTitle>
-                <CardDescription>TO_DO, IN_PROGRESS, DONE split per member.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {workloadData.map((row) => (
-                  <div key={row.name}>
-                    <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="font-medium text-slate-900 dark:text-slate-100">{row.name}</span>
-                      <span className="text-slate-500 dark:text-slate-400">{row.todo + row.inProgress + row.done} total</span>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-2 text-slate-500 dark:text-slate-400">
+                      <span>Assessment completion</span>
+                      <span>{completion}%</span>
                     </div>
-                    <div className="h-2 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex">
-                      <div className="bg-slate-400" style={{ width: `${(row.todo / Math.max(row.todo + row.inProgress + row.done, 1)) * 100}%` }} />
-                      <div className="bg-teal-500" style={{ width: `${(row.inProgress / Math.max(row.todo + row.inProgress + row.done, 1)) * 100}%` }} />
-                      <div className="bg-emerald-500" style={{ width: `${(row.done / Math.max(row.todo + row.inProgress + row.done, 1)) * 100}%` }} />
-                    </div>
+                    <Progress value={completion} variant="teal" />
                   </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        </>
+
+                  {section.memberRows.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No assigned members for this assessment.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {section.memberRows.map((member) => (
+                        <div key={`${section.assessmentId}-${member.user_id}`} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{member.name}</p>
+                            <Badge variant="default">{member.completion}%</Badge>
+                          </div>
+                          <div className="h-2 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex">
+                            <div className="bg-slate-400" style={{ width: `${member.total > 0 ? (member.todo / member.total) * 100 : 0}%` }} />
+                            <div className="bg-teal-500" style={{ width: `${member.total > 0 ? (member.inProgress / member.total) * 100 : 0}%` }} />
+                            <div className="bg-emerald-500" style={{ width: `${member.total > 0 ? (member.done / member.total) * 100 : 0}%` }} />
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span>To Do: {member.todo}</span>
+                            <span>In Progress: {member.inProgress}</span>
+                            <span>Done: {member.done}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
     </div>
   );

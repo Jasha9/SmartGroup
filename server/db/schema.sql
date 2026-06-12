@@ -72,6 +72,14 @@ CREATE TABLE IF NOT EXISTS group_messages (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS group_message_mentions (
+  mention_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID REFERENCES group_messages(message_id) ON DELETE CASCADE,
+  mentioned_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(message_id, mentioned_user_id)
+);
+
 CREATE TABLE IF NOT EXISTS task_comments (
   comment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id UUID REFERENCES tasks(task_id) ON DELETE CASCADE,
@@ -171,5 +179,6 @@ CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, crea
 CREATE INDEX IF NOT EXISTS idx_task_negotiations_task ON task_negotiations(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_negotiations_requested_to_status ON task_negotiations(requested_to, status);
 CREATE INDEX IF NOT EXISTS idx_group_messages_group_created ON group_messages(group_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_group_message_mentions_message ON group_message_mentions(message_id);
 CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at);
