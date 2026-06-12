@@ -61,10 +61,6 @@ const explanationCards = [
 
 export default function LoginPage() {
   const router = useRouter();
-<<<<<<< HEAD
-  const googleClientId = String(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim().replace(/^['\"]|['\"]$/g, '');
-  const hasGoogleClientId = Boolean(googleClientId);
-=======
   const hasGoogleClientId = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
   const [demoForm, setDemoForm] = useState({ name: '', email: '', message: '' });
@@ -84,7 +80,6 @@ export default function LoginPage() {
     event.preventDefault();
     setIsDemoSubmitted(true);
   };
->>>>>>> 884025f481eac063d8626f2b216f9da3a5b0ecec
 
   const handleGoogleSuccess = async (credentialResponse) => {
     const credential = credentialResponse?.credential;
