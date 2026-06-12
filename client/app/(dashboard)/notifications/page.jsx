@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getNotifications, markNotificationRead } from '@/services/notificationService';
 import { acceptCharter, negotiateCharter } from '@/services/charterService';
+import { acceptTaskChangeRequest, getTaskChangeRequests, rejectTaskChangeRequest } from '@/services/taskService';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
@@ -10,21 +11,35 @@ import Badge from '@/components/ui/Badge';
 import { Zap, CheckCircle2, ArrowLeftRight, ShieldAlert } from 'lucide-react';
 
 function getCardMeta(notification) {
-  if (notification.type === 'TASK_ASSIGNED') {
+  const type = String(notification.type || '').toUpperCase();
+
+  if (type === 'TASK_ASSIGNED') {
     return {
       heading: 'Task Assigned',
       actionLabelA: 'Accept Responsibility',
-      actionLabelB: 'Request Negotiation',
+      actionLabelB: 'Request Change',
       icon: <CheckCircle2 className="w-4 h-4 text-teal-600" />,
+      actionable: true,
     };
   }
 
-  if ((notification.type || '').toUpperCase().includes('SWAP')) {
+  if (type === 'TASK_CHANGE_REQUEST') {
     return {
-      heading: 'Task Swap Request',
-      actionLabelA: 'Approve',
-      actionLabelB: 'Decline',
+      heading: 'Request Change',
+      actionLabelA: 'Accept',
+      actionLabelB: 'Reject',
       icon: <ArrowLeftRight className="w-4 h-4 text-indigo-600" />,
+      actionable: true,
+    };
+  }
+
+  if (type === 'COMMENT_MENTION') {
+    return {
+      heading: 'Comment Mention',
+      actionLabelA: '',
+      actionLabelB: '',
+      icon: <ShieldAlert className="w-4 h-4 text-teal-600" />,
+      actionable: false,
     };
   }
 
@@ -33,6 +48,7 @@ function getCardMeta(notification) {
     actionLabelA: 'Acknowledge',
     actionLabelB: 'Review Later',
     icon: <ShieldAlert className="w-4 h-4 text-amber-500" />,
+    actionable: false,
   };
 }
 
@@ -70,14 +86,37 @@ export default function NotificationsPage() {
   };
 
   const handleAction = async (notificationId, action) => {
+    const target = notifications.find((item) => item.notification_id === notificationId);
+    const type = String(target?.type || '').toUpperCase();
+
     setError(null);
     setActionLoading((current) => ({ ...current, [notificationId]: true }));
     try {
-      if (action === 'accept') {
-        await acceptCharter({ notificationId });
+      if (type === 'TASK_ASSIGNED') {
+        if (action === 'accept') {
+          await acceptCharter({ notificationId });
+        } else {
+          await negotiateCharter({ notificationId });
+        }
+      } else if (type === 'TASK_CHANGE_REQUEST') {
+        const requestsRes = await getTaskChangeRequests();
+        const requests = requestsRes?.data?.requests || requestsRes?.requests || [];
+        const taskId = target?.related_task_id || target?.task_id;
+        const pending = requests.find((item) => item.task_id === taskId && item.status === 'PENDING');
+        const requestId = pending?.negotiation_id;
+        if (!requestId) {
+          throw new Error('Missing request id');
+        }
+
+        if (action === 'accept') {
+          await acceptTaskChangeRequest(requestId);
+        } else {
+          await rejectTaskChangeRequest(requestId);
+        }
       } else {
-        await negotiateCharter({ notificationId });
+        await markNotificationRead(notificationId);
       }
+
       await markNotificationRead(notificationId);
       await fetchNotifications();
     } catch {
@@ -140,7 +179,8 @@ export default function NotificationsPage() {
       ) : (
         <div className="space-y-4">
           {notifications.map((notification) => {
-            const isAssignedTask = notification.type === 'TASK_ASSIGNED';
+            const type = String(notification.type || '').toUpperCase();
+            const showActions = type === 'TASK_ASSIGNED' || type === 'TASK_CHANGE_REQUEST';
             const isBusy = actionLoading[notification.notification_id];
             const meta = getCardMeta(notification);
 
@@ -157,6 +197,9 @@ export default function NotificationsPage() {
                         {notification.created_at ? new Date(notification.created_at).toLocaleString() : 'Just now'}
                       </p>
                       <p className="mt-2 text-slate-800 dark:text-slate-200">{notification.message}</p>
+                      {notification.related_assessment_id && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Assessment linked</p>
+                      )}
                     </div>
                     {!notification.is_read && (
                       <span className="inline-flex items-center rounded-full bg-teal-600 text-white text-xs font-semibold px-2.5 py-1.5">
@@ -165,7 +208,7 @@ export default function NotificationsPage() {
                     )}
                   </div>
 
-                  {isAssignedTask && (
+                  {showActions && meta.actionable && (
                     <div className="flex flex-wrap gap-2">
                       <Button onClick={() => handleAction(notification.notification_id, 'accept')} disabled={isBusy} variant="teal">
                         <CheckCircle2 className="w-4 h-4" />
