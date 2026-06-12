@@ -1,56 +1,85 @@
 'use client';
 
-import { BookOpen, ChartLine, ClipboardList, Play, ShieldCheck, Sparkles } from 'lucide-react';
+import { Bolt, ChartLine, Play, Sparkles, Users } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import Button from '@/components/ui/Button';
+import Modal from '@/components/ui/Modal';
+import { Card } from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
 import ThemeToggle from '@/components/theme/ThemeToggle';
 import { googleLogin } from '@/services/authService';
 
-const heroSteps = [
-  { label: 'Assessment', value: 'Technical Implementation Document' },
-  { label: 'Tasks generated', value: '6' },
-  { label: 'Pending responsibilities', value: '3' },
-  { label: 'Team progress', value: '68%' },
-];
-
-const featureCards = [
+const productCards = [
   {
     title: 'SmartGroup Assistant',
-    description: 'Generate structured tasks from an assignment brief.',
+    description: 'Generate task plans from assignment briefs.',
+  },
+  {
+    title: 'Group Management',
+    description: 'Create groups and invite members.',
   },
   {
     title: 'Responsibilities',
-    description: 'Members accept or request changes before work starts.',
+    description: 'Accept or request changes before tasks begin.',
   },
   {
     title: 'My Tasks',
-    description: 'Students see tasks sorted by assessment and due date.',
+    description: 'View personal tasks sorted by assessment and urgency.',
   },
   {
     title: 'Team Progress',
-    description: 'Track contribution and task completion fairly.',
+    description: 'Track completion and contribution.',
+  },
+  {
+    title: 'Alerts',
+    description: 'Keep members updated on assigned responsibilities.',
   },
 ];
 
-const howItWorks = [
-  'Create your team',
-  'Add group members',
-  'Generate tasks with SmartGroup Assistant',
-  'Assign and accept responsibilities',
-  'Track progress until submission',
-];
-
-const screenshotCards = [
-  'Dashboard',
-  'SmartGroup Assistant',
-  'My Tasks',
-  'Responsibilities',
-  'Team Progress',
+const explanationCards = [
+  {
+    title: 'Plan',
+    description: 'Turn assignment requirements into structured tasks.',
+    icon: Bolt,
+    color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/20 dark:text-teal-200',
+  },
+  {
+    title: 'Assign',
+    description: 'Allocate responsibilities clearly to group members.',
+    icon: Users,
+    color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-200',
+  },
+  {
+    title: 'Track',
+    description: 'Monitor task progress and team contribution.',
+    icon: ChartLine,
+    color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200',
+  },
 ];
 
 export default function LoginPage() {
   const router = useRouter();
   const hasGoogleClientId = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+  const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const [demoForm, setDemoForm] = useState({ name: '', email: '', message: '' });
+  const [isDemoSubmitted, setIsDemoSubmitted] = useState(false);
+
+  const openDemoPopup = () => setIsDemoOpen(true);
+  const closeDemoPopup = () => {
+    setIsDemoOpen(false);
+    setIsDemoSubmitted(false);
+  };
+
+  const handleDemoChange = (field) => (event) => {
+    setDemoForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
+
+  const handleDemoSubmit = (event) => {
+    event.preventDefault();
+    setIsDemoSubmitted(true);
+  };
 
   const handleGoogleSuccess = async (credentialResponse) => {
     const credential = credentialResponse?.credential;
@@ -79,228 +108,309 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto max-w-7xl px-6 py-6 lg:px-8">
-        <header className="sticky top-0 z-20 rounded-b-[2rem] border border-slate-200 bg-white/95 px-4 py-4 shadow-sm shadow-slate-200/40 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-black/10 md:px-8">
+        <header className="sticky top-0 z-30 rounded-b-[2rem] border border-slate-200 bg-white/95 px-4 py-4 shadow-sm shadow-slate-200/40 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-black/10 md:px-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-slate-950 text-white shadow-lg shadow-slate-900/10 dark:bg-teal-500 dark:text-slate-950">
+              <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/10">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-900 dark:text-slate-100">SmartGroup</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">AI-powered group work</p>
+                <p className="text-base font-semibold tracking-[0.3em] text-slate-950 dark:text-white">SmartGroup</p>
               </div>
             </div>
 
-            <div className="hidden items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300 md:flex">
+            <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300 lg:flex">
+              <a href="#product" className="transition hover:text-slate-900 dark:hover:text-white">Product</a>
               <a href="#features" className="transition hover:text-slate-900 dark:hover:text-white">Features</a>
-              <a href="#how-it-works" className="transition hover:text-slate-900 dark:hover:text-white">How it works</a>
-              <a href="#demo" className="transition hover:text-slate-900 dark:hover:text-white">Demo</a>
-            </div>
+              <a href="#about" className="transition hover:text-slate-900 dark:hover:text-white">About Us</a>
+              <a href="#contact" className="transition hover:text-slate-900 dark:hover:text-white">Contact Us</a>
+            </nav>
 
             <div className="flex items-center gap-3">
-              <a
-                href="#sign-in"
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                Sign in
-              </a>
+              {hasGoogleClientId ? (
+                <div className="overflow-hidden rounded-full">
+                  <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
+                </div>
+              ) : (
+                <div className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+                  Google sign-in unavailable
+                </div>
+              )}
               <ThemeToggle />
             </div>
           </div>
         </header>
 
         <main className="space-y-24 py-12">
-          <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-950 dark:shadow-black/20">
-            <div className="pointer-events-none absolute -right-16 top-10 h-64 w-64 rounded-full bg-teal-400/10 blur-3xl" />
-            <div className="pointer-events-none absolute left-0 top-32 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl" />
-            <div className="grid gap-12 lg:grid-cols-[1fr_0.9fr] lg:items-center">
-              <div className="space-y-8">
-                <div className="max-w-3xl space-y-6">
-                  <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">Built for student teams</p>
-                  <h1 className="text-5xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-6xl">
-                    Plan group work. Assign tasks. Track contribution fairly.
+          <div className="fixed bottom-6 right-6 z-40 hidden max-w-sm rounded-[2rem] border border-slate-200 bg-white/95 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100 md:block">
+            <div className="flex items-start gap-4">
+              <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-3xl bg-indigo-600 text-white">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm uppercase tracking-[0.35em] text-indigo-600 dark:text-indigo-400">Demo Available</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                  Ready to see SmartGroup in action? Request a tailored walkthrough with one click.
+                </p>
+                <Button variant="indigo" size="sm" className="mt-4" onClick={openDemoPopup}>
+                  Request a Demo
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 px-6 py-16 shadow-2xl shadow-slate-200/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/20 sm:px-10 lg:px-12">
+            <div className="pointer-events-none absolute -right-24 top-10 hidden h-72 w-72 rounded-full bg-teal-300/30 blur-3xl md:block" />
+            <div className="pointer-events-none absolute left-0 top-28 hidden h-56 w-56 rounded-full bg-amber-200/40 blur-3xl md:block" />
+            <div className="grid gap-12 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div className="max-w-2xl space-y-8">
+                <Badge variant="blue" className="uppercase tracking-[0.32em] text-xs font-semibold text-slate-950 dark:text-white">
+                  Built for student teams
+                </Badge>
+                <div className="space-y-6">
+                  <h1 className="max-w-3xl text-5xl font-semibold leading-tight text-slate-950 dark:text-white sm:text-6xl">
+                    Make student group work fair, clear, and accountable.
                   </h1>
                   <p className="max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
-                    SmartGroup uses AI to help student teams break down assignments, assign responsibilities, manage tasks, and improve accountability.
+                    SmartGroup helps student teams plan assignments, assign responsibilities, track progress, and improve collaboration using AI-supported workflows.
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center" id="sign-in">
-                  {hasGoogleClientId ? (
-                    <div className="inline-flex rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800 dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400">
-                      <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-                      Google sign-in is temporarily unavailable. Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID in this deployment.
-                    </div>
-                  )}
-                  <a
-                    href="#demo"
-                    className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Watch Demo
+                <div className="flex flex-wrap items-center gap-4">
+                  <Button variant="indigo" size="lg" className="rounded-full" onClick={openDemoPopup}>
+                    Book a Demo
+                  </Button>
+                  <a href="#product" className="inline-flex rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800">
+                    Learn More
                   </a>
                 </div>
-
-                <p className="max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                  Continue with Google to access your group workspace and keep your course collaboration on track.
-                </p>
               </div>
 
-              <div className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-100 p-6 shadow-lg shadow-slate-200/30 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
-                <div className="absolute right-4 top-4 rounded-full bg-slate-950/10 p-2 text-slate-950 dark:bg-teal-500/15 dark:text-teal-300">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="mb-5 rounded-[1.75rem] bg-white p-5 shadow-sm dark:bg-slate-950">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">NIT3004 Capstone Team</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Technical Implementation Document</p>
+              <div className="relative mx-auto flex h-[420px] w-full max-w-[420px] items-center justify-center rounded-[2rem] bg-gradient-to-br from-white to-slate-100 p-8 shadow-2xl shadow-slate-200/30 dark:from-slate-900 dark:to-slate-950 dark:shadow-black/20">
+                <div className="absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(251,113,133,0.18),_transparent_30%)]" />
+                <div className="relative grid gap-5">
+                  <div className="rounded-[1.75rem] border border-slate-200 bg-white/95 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
+                    <div className="mb-4 flex items-center gap-3 text-slate-900 dark:text-white">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-3xl bg-teal-500 text-white">
+                        <Bolt className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">AI-supported planning</p>
+                      </div>
                     </div>
-                    <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">
-                      Project
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
-                    {heroSteps.map((step) => (
-                      <div key={step.label} className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-300">
-                        <span>{step.label}</span>
-                        <span className="font-semibold text-slate-950 dark:text-white">{step.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-4 rounded-[1.75rem] border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-                  <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
-                    <span className="font-semibold text-slate-900 dark:text-white">Mini task board</span>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] uppercase tracking-[0.35em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">Snapshot</span>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {['To Do', 'In Progress', 'Done'].map((status) => (
-                      <div key={status} className="rounded-3xl bg-slate-100 p-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-                        {status}
-                      </div>
-                    ))}
+                    <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">
+                      Turn assignment briefs into clear task plans without manual guesswork.
+                    </p>
                   </div>
 
-                  <div className="grid gap-3">
-                    <div className="rounded-3xl bg-slate-100 p-3 dark:bg-slate-900">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Prepare methods section</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Due Fri</p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-[1.75rem] border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
+                      <p className="text-sm font-semibold text-slate-950 dark:text-white">Teamwork</p>
+                      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">Keep everyone aligned with shared responsibilities and updates.</p>
                     </div>
-                    <div className="rounded-3xl bg-slate-100 p-3 dark:bg-slate-900">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Review dataset plan</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">In progress</p>
+                    <div className="rounded-[1.75rem] border border-slate-200 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
+                      <p className="text-sm font-semibold text-slate-950 dark:text-white">Accountability</p>
+                      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">Capture decisions, roles, and progress in one easy workflow.</p>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section id="product" className="space-y-10 px-2 sm:px-0">
+            <div className="max-w-3xl">
+              <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">What is SmartGroup?</p>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">SmartGroup is an AI-supported collaboration tool designed for university group assessments.</h2>
+              <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+                It helps students turn assignment briefs into clear task plans, assign responsibilities, manage progress, and keep evidence of contribution.
+              </p>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-3">
+              {explanationCards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <Card key={card.title} className="p-6">
+                    <div className={`mb-4 inline-flex h-12 w-12 items-center justify-center rounded-3xl ${card.color}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-slate-950 dark:text-white">{card.title}</h3>
+                    <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">{card.description}</p>
+                  </Card>
+                );
+              })}
+            </div>
+          </section>
+
+          <section id="features" className="space-y-10 px-2 sm:px-0">
+            <div className="max-w-3xl">
+              <p className="text-sm uppercase tracking-[0.35em] text-indigo-600 dark:text-indigo-400">Features built for fair group work</p>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Everything teams need for accountable collaboration.</h2>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {productCards.map((feature) => (
+                <Card key={feature.title} className="p-6">
+                  <h3 className="text-xl font-semibold text-slate-950 dark:text-white">{feature.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">{feature.description}</p>
+                </Card>
+              ))}
             </div>
           </section>
 
           <section id="demo" className="space-y-8 px-2 sm:px-0">
             <div className="max-w-3xl">
               <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">See SmartGroup in action</p>
-              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Demo video placeholder</h2>
-              <p className="mt-3 text-base leading-7 text-slate-600 dark:text-slate-300">
-                We will add our project walkthrough video here.
-              </p>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Demo video coming soon</h2>
             </div>
 
-            <div className="rounded-[2rem] border border-slate-200 bg-slate-100 p-16 text-center shadow-lg shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-14 text-center shadow-lg shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
               {/* TODO: Replace this placeholder with YouTube embed iframe */}
-              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-white text-slate-950 shadow-lg shadow-slate-200/60 dark:bg-slate-950 dark:text-white dark:shadow-black/20">
+              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xl shadow-indigo-500/20">
                 <Play className="h-10 w-10" />
               </div>
               <p className="mt-6 text-xl font-semibold text-slate-950 dark:text-white">Demo video coming soon</p>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                This area will show a project walkthrough that explains how SmartGroup helps student teams manage group work.
+              <p className="mt-3 max-w-2xl mx-auto text-sm leading-6 text-slate-600 dark:text-slate-400">
+                We will add our walkthrough video here to explain how SmartGroup helps student teams manage group work.
               </p>
             </div>
           </section>
 
-          <section id="features" className="space-y-8 px-2 sm:px-0">
-            <div className="max-w-2xl">
-              <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">Features</p>
-              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Modern group work tools designed for student teams.</h2>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              {featureCards.map((feature) => (
-                <div key={feature.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">{feature.title}</p>
-                  <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-slate-400">{feature.description}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section id="how-it-works" className="space-y-8 px-2 sm:px-0">
-            <div className="max-w-2xl">
-              <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">How it works</p>
-              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">A simple process for group success.</h2>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-              {howItWorks.map((step, index) => (
-                <div key={step} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-500 text-white">
-                    <span className="text-sm font-semibold">{index + 1}</span>
-                  </div>
-                  <h3 className="mt-5 text-lg font-semibold text-slate-950 dark:text-white">{step}</h3>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section id="screenshots" className="space-y-8 px-2 sm:px-0">
-            <div className="max-w-2xl">
-              <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">Built around your group workflow</p>
-              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Screenshots coming soon</h2>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-              {screenshotCards.map((label) => (
-                <div key={label} className="flex min-h-[160px] flex-col justify-between rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-6 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  <div>
-                    <div className="mb-4 h-24 rounded-3xl bg-slate-100 dark:bg-slate-800" />
-                    <p className="font-semibold text-slate-950 dark:text-white">{label}</p>
-                  </div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">[Insert screenshot here]</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[2rem] border border-slate-200 bg-slate-100 p-10 dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-              <div className="max-w-2xl">
-                <p className="text-lg font-semibold text-slate-950 dark:text-white">Ready to make group work fairer?</p>
-                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                  Sign in and start planning your next group assessment with SmartGroup.
+          <section id="about" className="space-y-8 px-2 sm:px-0">
+            <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+              <div className="space-y-6">
+                <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">About Us</p>
+                <h2 className="text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">
+                  Our mission is to help every student team collaborate with confidence.
+                </h2>
+                <p className="max-w-3xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+                  SmartGroup started with a simple belief: group work should not be the hardest part of a course. We build tools that create clarity around tasks, roles, and progress so teams can focus on doing their best work together.
+                </p>
+                <p className="max-w-3xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+                  Our commitment to innovation means we keep evolving SmartGroup to support real classroom workflows, reduce friction, and make accountability feel fair instead of overwhelming.
+                </p>
+                <p className="max-w-3xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+                  We partner with students and educators by delivering a modern collaboration experience that is easy to adopt, grounded in practical use cases, and focused on stronger team outcomes.
                 </p>
               </div>
-              <div className="inline-flex rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800 dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400">
-                {hasGoogleClientId ? (
-                  <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
-                ) : (
-                  <span>Google sign-in unavailable</span>
-                )}
+
+              <div className="space-y-6 rounded-[2rem] bg-slate-100 p-10 shadow-lg shadow-slate-200/40 dark:bg-slate-900 dark:shadow-black/20">
+                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-950 dark:text-white">Our promise to you</p>
+                <div className="space-y-4 text-sm leading-7 text-slate-600 dark:text-slate-400">
+                  <p><span className="font-semibold text-slate-950 dark:text-white">Mission-driven design.</span> We deliver tools that help teams stay aligned, accountable, and productive.</p>
+                  <p><span className="font-semibold text-slate-950 dark:text-white">Continuous innovation.</span> We listen to users and evolve SmartGroup with features that solve real challenges.</p>
+                  <p><span className="font-semibold text-slate-950 dark:text-white">Client-focused support.</span> We are committed to supporting your team with reliable guidance and responsive help.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="contact" className="space-y-8 px-2 sm:px-0">
+            <div className="max-w-3xl">
+              <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">Contact Us</p>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Want to learn more or request a demo?</h2>
+              <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-300">
+                Reach out to learn how SmartGroup can help your student teams plan, assign, and track group work with more clarity.
+              </p>
+            </div>
+
+            <div className="grid gap-6 sm:grid-cols-3">
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Email</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">smartgroup.notify@gmail.com</p>
+              </Card>
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Book a Demo</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">Request a personalized walkthrough to see how SmartGroup fits your group workflow.</p>
+              </Card>
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Support</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400">We offer friendly guidance and practical support for onboarding and group project success.</p>
+              </Card>
+            </div>
+          </section>
+
+          <section className="rounded-[2rem] bg-gradient-to-r from-slate-950 via-indigo-900 to-teal-700 px-8 py-12 text-white shadow-2xl shadow-slate-900/30">
+            <div className="grid gap-8 lg:grid-cols-[1.4fr_0.8fr] lg:items-center">
+              <div>
+                <p className="text-sm uppercase tracking-[0.35em] text-teal-200">Ready to make group work fairer?</p>
+                <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-4xl">Use SmartGroup to plan, assign, and track student group work with more clarity.</h2>
+              </div>
+              <div className="flex items-center justify-start lg:justify-end">
+                <Button variant="warning" className="rounded-full" onClick={openDemoPopup}>
+                  Book a Demo
+                </Button>
               </div>
             </div>
           </section>
 
           <footer className="border-t border-slate-200 pt-8 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="font-semibold text-slate-950 dark:text-white">SmartGroup</p>
-                <p className="mt-1">AI-powered accountability for student teams.</p>
+                <p className="mt-1">AI-powered group work made fair and simple.</p>
               </div>
-              <p>Capstone Project</p>
+              <div className="space-y-1">
+                <p className="font-medium text-slate-950 dark:text-white">Contact</p>
+                <a href="mailto:smartgroup.notify@gmail.com" className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                  smartgroup.notify@gmail.com
+                </a>
+              </div>
             </div>
           </footer>
+
+          <Modal isOpen={isDemoOpen} onClose={closeDemoPopup} title={isDemoSubmitted ? 'Demo request sent' : 'Book a Demo'}>
+            {isDemoSubmitted ? (
+              <div className="space-y-5">
+                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  Thanks for your request! We will follow up at <span className="font-semibold text-slate-900 dark:text-white">{demoForm.email}</span> shortly.
+                </p>
+                <Button variant="indigo" className="w-full" onClick={closeDemoPopup}>
+                  Close
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleDemoSubmit} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Your name</label>
+                  <input
+                    type="text"
+                    value={demoForm.name}
+                    onChange={handleDemoChange('name')}
+                    placeholder="Example: Aisha"
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none ring-0 transition focus:border-indigo-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
+                  <input
+                    type="email"
+                    value={demoForm.email}
+                    onChange={handleDemoChange('email')}
+                    placeholder="you@example.com"
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none ring-0 transition focus:border-indigo-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Message</label>
+                  <textarea
+                    value={demoForm.message}
+                    onChange={handleDemoChange('message')}
+                    placeholder="Tell us what you'd like to see in the demo."
+                    rows={4}
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none ring-0 transition focus:border-indigo-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </div>
+                <Button type="submit" variant="indigo" className="w-full">
+                  Send request
+                </Button>
+              </form>
+            )}
+          </Modal>
         </main>
       </div>
     </div>
