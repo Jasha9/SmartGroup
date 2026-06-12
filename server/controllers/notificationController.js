@@ -111,4 +111,47 @@ async function markRead(req, res) {
   }
 }
 
-module.exports = { getNotifications, createNotification, markRead };
+// PATCH /api/notifications/read-by-context
+async function markReadByContext(req, res) {
+  try {
+    const userId = req.user.user_id;
+    const { taskId = null, groupId = null, types = null } = req.body || {};
+
+    if (!taskId && !groupId && !(Array.isArray(types) && types.length > 0)) {
+      return res.status(400).json({ success: false, error: 'At least one context filter is required.' });
+    }
+
+    const values = [userId];
+    const filters = [];
+
+    if (taskId) {
+      values.push(taskId);
+      filters.push(`(task_id = $${values.length} OR related_task_id = $${values.length})`);
+    }
+
+    if (groupId) {
+      values.push(groupId);
+      filters.push(`(group_id = $${values.length} OR related_group_id = $${values.length})`);
+    }
+
+    if (Array.isArray(types) && types.length > 0) {
+      values.push(types.map((type) => String(type || '').toUpperCase()).filter(Boolean));
+      filters.push(`UPPER(type) = ANY($${values.length}::text[])`);
+    }
+
+    const query = `UPDATE notifications
+                   SET is_read = true
+                   WHERE user_id = $1
+                     AND is_read = false
+                     AND ${filters.join(' AND ')}
+                   RETURNING notification_id`;
+
+    const result = await pool.query(query, values);
+    return res.json({ success: true, data: { updated: result.rowCount } });
+  } catch (err) {
+    console.error('[markReadByContext]', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to mark notifications by context.' });
+  }
+}
+
+module.exports = { getNotifications, createNotification, markRead, markReadByContext };

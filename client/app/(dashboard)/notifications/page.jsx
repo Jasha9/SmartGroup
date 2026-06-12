@@ -128,9 +128,14 @@ export default function NotificationsPage() {
 
   const summary = useMemo(() => {
     const unread = notifications.filter((n) => !n.is_read).length;
-    const assignments = notifications.filter((n) => n.type === 'TASK_ASSIGNED').length;
+    const assignments = notifications.filter((n) => !n.is_read && String(n.type || '').toUpperCase() === 'TASK_ASSIGNED').length;
     return { unread, assignments };
   }, [notifications]);
+
+  const pendingNotifications = useMemo(
+    () => notifications.filter((n) => !n.is_read),
+    [notifications]
+  );
 
   if (loading) {
     return (
@@ -170,7 +175,7 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {notifications.length === 0 ? (
+      {pendingNotifications.length === 0 ? (
         <Card>
           <div className="py-16 text-center text-slate-500 dark:text-slate-400">
             <p className="text-lg font-medium">No actions require your attention right now.</p>
@@ -178,14 +183,14 @@ export default function NotificationsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {notifications.map((notification) => {
+          {pendingNotifications.map((notification) => {
             const type = String(notification.type || '').toUpperCase();
             const showActions = type === 'TASK_ASSIGNED' || type === 'TASK_CHANGE_REQUEST';
             const isBusy = actionLoading[notification.notification_id];
             const meta = getCardMeta(notification);
 
             return (
-              <Card key={notification.notification_id} className={`p-5 ${notification.is_read ? 'opacity-80' : 'shadow-md border-teal-200/60 dark:border-teal-800/60'}`}>
+              <Card key={notification.notification_id} className="p-5 shadow-md border-teal-200/60 dark:border-teal-800/60">
                 <div className="flex flex-col gap-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -201,11 +206,9 @@ export default function NotificationsPage() {
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Assessment linked</p>
                       )}
                     </div>
-                    {!notification.is_read && (
-                      <span className="inline-flex items-center rounded-full bg-teal-600 text-white text-xs font-semibold px-2.5 py-1.5">
-                        Action Needed
-                      </span>
-                    )}
+                    <span className="inline-flex items-center rounded-full bg-teal-600 text-white text-xs font-semibold px-2.5 py-1.5">
+                      Action Needed
+                    </span>
                   </div>
 
                   {showActions && meta.actionable && (
@@ -221,11 +224,9 @@ export default function NotificationsPage() {
                     </div>
                   )}
 
-                  {!notification.is_read && (
-                    <Button variant="ghost" size="sm" onClick={() => handleMarkRead(notification.notification_id)}>
-                      Mark as reviewed
-                    </Button>
-                  )}
+                  <Button variant="ghost" size="sm" onClick={() => handleMarkRead(notification.notification_id)}>
+                    Mark as reviewed
+                  </Button>
                 </div>
               </Card>
             );

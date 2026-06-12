@@ -3,6 +3,7 @@ const {
   getGroups,
   createGroup,
   getGroupMembers,
+  getGroupAssessments,
   addGroupMember,
   getGroupMessages,
   addGroupMessage,
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.get('/', authMiddleware, getGroups);
 router.post('/', authMiddleware, createGroup);
+router.get('/:groupId/assessments', authMiddleware, getGroupAssessments);
 router.get('/:groupId/messages', authMiddleware, getGroupMessages);
 router.post('/:groupId/messages', authMiddleware, addGroupMessage);
 router.get('/:groupId/members', authMiddleware, getGroupMembers);

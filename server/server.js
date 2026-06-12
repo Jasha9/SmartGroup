@@ -12,6 +12,7 @@ const aiRoutes = require('./routes/aiRoutes');
 const charterRoutes = require('./routes/charterRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const contributionRoutes = require('./routes/contributionRoutes');
+const assessmentRoutes = require('./routes/assessmentRoutes');
 
 const app = express();
 
@@ -74,6 +75,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/charters', charterRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contributions', contributionRoutes);
+app.use('/api/assessments', assessmentRoutes);
 
 const PORT = process.env.PORT || 5001;
 
