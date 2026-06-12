@@ -50,12 +50,15 @@ const screenshotCards = [
 
 export default function LoginPage() {
   const router = useRouter();
+  const hasGoogleClientId = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     const credential = credentialResponse?.credential;
     if (!credential) {
       console.error('Google login failed: missing credential response', credentialResponse);
-      alert('Google login failed: no credential returned.');
+      alert(
+        'Google login failed: no credential returned. Check Vercel NEXT_PUBLIC_GOOGLE_CLIENT_ID and Google Authorized JavaScript origins for this domain.'
+      );
       return;
     }
 
@@ -123,9 +126,15 @@ export default function LoginPage() {
                 </div>
 
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center" id="sign-in">
-                  <div className="inline-flex rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800 dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400">
-                    <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
-                  </div>
+                  {hasGoogleClientId ? (
+                    <div className="inline-flex rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800 dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400">
+                      <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+                      Google sign-in is temporarily unavailable. Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID in this deployment.
+                    </div>
+                  )}
                   <a
                     href="#demo"
                     className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -274,7 +283,11 @@ export default function LoginPage() {
                 </p>
               </div>
               <div className="inline-flex rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:bg-slate-800 dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400">
-                <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
+                {hasGoogleClientId ? (
+                  <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
+                ) : (
+                  <span>Google sign-in unavailable</span>
+                )}
               </div>
             </div>
           </section>
