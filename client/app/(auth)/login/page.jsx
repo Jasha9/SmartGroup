@@ -1,7 +1,7 @@
 'use client';
 
 import { Bolt, ChartLine, Play, Sparkles, Users } from 'lucide-react';
-import { useGoogleLogin } from '@react-oauth/google';
+import { GoogleLogin } from '@react-oauth/google';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Button from '@/components/ui/Button';
@@ -98,15 +98,10 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogleError = () => {
-    alert('Google login failed.');
+  const handleGoogleError = (error) => {
+    console.error('Google login failed:', error);
+    alert('Google login failed. Please try again.');
   };
-
-  const login = useGoogleLogin({
-    onSuccess: handleGoogleSuccess,
-    onError: handleGoogleError,
-    flow: 'implicit',
-  });
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
@@ -130,12 +125,17 @@ export default function LoginPage() {
             </nav>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => login()}
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                Sign in
-              </button>
+              <div className="rounded-full border border-slate-300 bg-white px-1 py-1 dark:border-slate-700 dark:bg-slate-900">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  theme="outline"
+                  size="large"
+                  shape="pill"
+                  text="signin_with"
+                  containerProps={{ className: 'w-full' }}
+                />
+              </div>
               <ThemeToggle />
             </div>
           </div>
