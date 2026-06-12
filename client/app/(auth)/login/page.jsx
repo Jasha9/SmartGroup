@@ -86,7 +86,7 @@ export default function LoginPage() {
     if (!credential) {
       console.error('Google login failed: missing credential response', credentialResponse);
       alert(
-        'Google login failed: no credential returned. Check Vercel NEXT_PUBLIC_GOOGLE_CLIENT_ID and Google Authorized JavaScript origins for this domain.'
+        `Google login failed: no credential returned. Verify NEXT_PUBLIC_GOOGLE_CLIENT_ID and add this exact origin in Google OAuth settings: ${window.location.origin}`
       );
       return;
     }
