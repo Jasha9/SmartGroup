@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getGroupMembers } from '@/services/groupService';
+import { markNotificationsReadByContext } from '@/services/notificationService';
 import {
   acceptTask,
   addTaskComment,
@@ -25,6 +26,8 @@ import { CalendarClock, CheckCircle2, Clock3, MessageSquareWarning } from 'lucid
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DUE_SOON_DAYS = 3;
 const TASK_TABS = ['DETAILS', 'COMMENTS', 'SUBTASKS', 'ACTIVITY'];
+const TASK_VIEWS = ['LIST', 'KANBAN'];
+const KANBAN_COLUMNS = ['TO_DO', 'IN_PROGRESS', 'DONE'];
 
 const URGENCY_CONFIG = {
   OVERDUE: { rank: 0, label: 'Overdue', badge: 'destructive' },
@@ -94,6 +97,10 @@ function normalizeStatus(status) {
   return String(status || '').toUpperCase();
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
 function statusBadgeVariant(status) {
   const normalized = normalizeStatus(status);
   if (normalized === 'DONE') return 'accepted';
@@ -154,14 +161,15 @@ function normalizeFlatShape(list) {
 
   list.forEach((task, index) => {
     const assessmentId = task.assessment_id || task.assessment_title || `ungrouped-${index}`;
-    const groupId = task.group_id || task.group_name || 'unknown-group';
-    const key = `${assessmentId}::${groupId}`;
+    const groupId = task.group_id || null;
+    const groupKey = groupId || task.group_name || `unknown-group-${index}`;
+    const key = `${assessmentId}::${groupKey}`;
 
     if (!sections.has(key)) {
       sections.set(key, {
         assessment_id: task.assessment_id || key,
         assessment_title: task.assessment_title || 'Unassigned Assessment',
-        group_id: task.group_id || groupId,
+        group_id: task.group_id || null,
         group_name: task.group_name || 'Unknown Group',
         due_date: task.assessment_due_date || null,
         tasks: [],
@@ -237,6 +245,7 @@ export default function MyTasksPage() {
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [taskView, setTaskView] = useState('LIST');
 
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -334,6 +343,12 @@ export default function MyTasksPage() {
     setSubtaskDraft('');
     setActiveTaskTab(defaultTab);
     setIsTaskModalOpen(true);
+
+    if (task?.task_id) {
+      // Viewing task details counts as reviewing task-related notices.
+      markNotificationsReadByContext({ taskId: task.task_id }).catch(() => null);
+    }
+
     await Promise.all([loadComments(task.task_id), loadSubtasks(task.task_id)]);
   };
 
@@ -415,7 +430,13 @@ export default function MyTasksPage() {
     setRequestMembersLoading(true);
 
     try {
-      const groupId = task.group_id;
+      const groupId = String(task.group_id || '').trim();
+      if (!isUuid(groupId)) {
+        setRequestError('Unable to identify this task group. Refresh and try again.');
+        setRequestMembers([]);
+        return;
+      }
+
       const data = await getGroupMembers(groupId);
       const members = data?.data?.members || data?.members || [];
       const normalized = members
@@ -522,6 +543,23 @@ export default function MyTasksPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {TASK_VIEWS.map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setTaskView(view)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              taskView === view
+                ? 'bg-slate-900 text-white'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            {view === 'LIST' ? 'List View' : 'Kanban View'}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
           Unable to load your tasks. Please try again.
@@ -540,7 +578,7 @@ export default function MyTasksPage() {
             <p className="text-base font-medium">No tasks assigned to you yet. Once your team assigns responsibilities, they will appear here.</p>
           </CardContent>
         </Card>
-      ) : (
+      ) : taskView === 'LIST' ? (
         <div className="space-y-4">
           {sortedSections.map((section) => {
             const urgency = URGENCY_CONFIG[section.urgencyKey] || URGENCY_CONFIG.NO_DUE_DATE;
@@ -692,6 +730,121 @@ export default function MyTasksPage() {
                       </div>
                     );
                   })}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {sortedSections.map((section) => {
+            const urgency = URGENCY_CONFIG[section.urgencyKey] || URGENCY_CONFIG.NO_DUE_DATE;
+            const specialStatuses = section.tasks.filter((task) => {
+              const status = normalizeStatus(task.status);
+              return status === 'PENDING_ACCEPTANCE' || status === 'NEGOTIATING' || status === 'CHANGE_REQUESTED';
+            });
+
+            return (
+              <Card key={`kanban-${section.assessment_id}-${section.group_id}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1 min-w-0">
+                      <CardTitle className="text-lg truncate">{section.assessment_title}</CardTitle>
+                      <CardDescription className="text-sm">{section.group_name}</CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <Badge variant={urgency.badge}>{urgency.label}</Badge>
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                        <CalendarClock className="w-3.5 h-3.5" />
+                        {formatDate(section.due_date)}
+                      </span>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="space-y-4">
+                  {specialStatuses.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Pending and Change Requests</p>
+                      {specialStatuses.map((task) => {
+                        const status = normalizeStatus(task.status);
+                        const isUpdating = updatingTaskId === task.task_id;
+                        return (
+                          <div key={`special-${task.task_id}`} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 bg-slate-50/80 dark:bg-slate-900/60">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{task.title}</p>
+                              <Badge variant={statusBadgeVariant(status)}>{statusLabel(status)}</Badge>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {status === 'PENDING_ACCEPTANCE' && (
+                                <>
+                                  <Button size="sm" variant="teal" onClick={() => handleAcceptTask(task.task_id)} disabled={isUpdating}>
+                                    Accept Responsibility
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => openRequestChangeModal(task)} disabled={isUpdating}>
+                                    Request Change
+                                  </Button>
+                                </>
+                              )}
+                              <Button size="sm" variant="ghost" onClick={() => openTaskModal(task, 'COMMENTS')} disabled={isUpdating}>
+                                Task Details
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {KANBAN_COLUMNS.map((column) => {
+                      const columnTasks = section.tasks.filter((task) => normalizeStatus(task.status) === column);
+                      return (
+                        <div key={`${section.assessment_id}-${column}`} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/50 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{statusLabel(column)}</p>
+                            <Badge variant="default">{columnTasks.length}</Badge>
+                          </div>
+
+                          <div className="space-y-2">
+                            {columnTasks.length === 0 ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">No tasks in this column.</p>
+                            ) : (
+                              columnTasks.map((task) => {
+                                const isUpdating = updatingTaskId === task.task_id;
+                                const priority = String(task.priority || 'MEDIUM').toUpperCase();
+                                return (
+                                  <div key={task.task_id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3 space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{task.title}</p>
+                                      <Badge variant="default">{priority}</Badge>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Due {formatDate(task.due_date)}</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {column === 'TO_DO' && (
+                                        <Button size="sm" variant="teal" onClick={() => handleUpdateTaskStatus(task.task_id, 'IN_PROGRESS')} disabled={isUpdating}>
+                                          Start Task
+                                        </Button>
+                                      )}
+                                      {column === 'IN_PROGRESS' && (
+                                        <Button size="sm" variant="primary" onClick={() => handleUpdateTaskStatus(task.task_id, 'DONE')} disabled={isUpdating}>
+                                          Mark Done
+                                        </Button>
+                                      )}
+                                      {column === 'DONE' && <Badge variant="accepted">Completed</Badge>}
+                                      <Button size="sm" variant="ghost" onClick={() => openTaskModal(task, 'COMMENTS')} disabled={isUpdating}>
+                                        Details
+                                      </Button>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </CardContent>
               </Card>
             );

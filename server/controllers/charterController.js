@@ -9,13 +9,18 @@ async function getCharter(req, res) {
   try {
     const result = await pool.query(
       `SELECT c.charter_id, c.user_id, c.group_id, c.task_id, c.status, c.is_signed, c.signed_at,
-              t.title AS task_title, t.description AS task_description,
+              t.title AS task_title, t.description AS task_description, t.status AS task_status,
+              t.priority, t.due_date, t.assessment_id,
+              a.title AS assessment_title,
+              g.group_name,
               u.full_name, u.email
        FROM charters c
        JOIN tasks t ON c.task_id = t.task_id
+       LEFT JOIN assessments a ON t.assessment_id = a.assessment_id
+       LEFT JOIN groups g ON c.group_id = g.group_id
        JOIN users u ON c.user_id = u.user_id
        WHERE c.group_id = $1
-       ORDER BY u.full_name ASC`,
+       ORDER BY COALESCE(a.due_date, CURRENT_DATE + INTERVAL '365 days') ASC, a.title ASC, u.full_name ASC`,
       [groupId]
     );
     return res.json({ success: true, data: { responsibilities: result.rows } });

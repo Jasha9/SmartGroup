@@ -62,6 +62,18 @@ pool.query(`
 });
 
 pool.query(`
+  CREATE TABLE IF NOT EXISTS group_message_mentions (
+    mention_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID REFERENCES group_messages(message_id) ON DELETE CASCADE,
+    mentioned_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(message_id, mentioned_user_id)
+  )
+`).catch((err) => {
+  console.error('[db:init] Failed to ensure group_message_mentions table:', err.message);
+});
+
+pool.query(`
   CREATE TABLE IF NOT EXISTS task_comments (
     comment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     task_id UUID REFERENCES tasks(task_id) ON DELETE CASCADE,
@@ -86,6 +98,13 @@ pool.query(`
   )
 `).catch((err) => {
   console.error('[db:init] Failed to ensure task_negotiations table:', err.message);
+});
+
+pool.query(`
+  ALTER TABLE task_negotiations
+  ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP
+`).catch((err) => {
+  console.error('[db:init] Failed to ensure task_negotiations.resolved_at column:', err.message);
 });
 
 pool.query(`
