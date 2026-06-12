@@ -50,14 +50,15 @@ const screenshotCards = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const hasGoogleClientId = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+  const googleClientId = String(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim().replace(/^['\"]|['\"]$/g, '');
+  const hasGoogleClientId = Boolean(googleClientId);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     const credential = credentialResponse?.credential;
     if (!credential) {
       console.error('Google login failed: missing credential response', credentialResponse);
       alert(
-        'Google login failed: no credential returned. Check Vercel NEXT_PUBLIC_GOOGLE_CLIENT_ID and Google Authorized JavaScript origins for this domain.'
+        `Google login failed: no credential returned. Verify NEXT_PUBLIC_GOOGLE_CLIENT_ID and add this exact origin in Google OAuth settings: ${window.location.origin}`
       );
       return;
     }
