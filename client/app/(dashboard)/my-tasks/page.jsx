@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { getGroupMembers } from '@/services/groupService';
 import {
   acceptTask,
   addTaskComment,
+  addTaskSubtask,
   getMyTasks,
   getTaskComments,
+  getTaskSubtasks,
   requestTaskChange,
   updateTaskStatus,
+  updateTaskSubtask,
 } from '@/services/taskService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -20,6 +24,7 @@ import { CalendarClock, CheckCircle2, Clock3, MessageSquareWarning } from 'lucid
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DUE_SOON_DAYS = 3;
+const TASK_TABS = ['DETAILS', 'COMMENTS', 'SUBTASKS', 'ACTIVITY'];
 
 const URGENCY_CONFIG = {
   OVERDUE: { rank: 0, label: 'Overdue', badge: 'destructive' },
@@ -73,6 +78,18 @@ function formatDate(dateStr) {
   });
 }
 
+function formatDateTime(dateStr) {
+  if (!dateStr) return 'Unknown time';
+  const value = new Date(dateStr);
+  if (Number.isNaN(value.getTime())) return 'Unknown time';
+  return value.toLocaleString('en-AU', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function normalizeStatus(status) {
   return String(status || '').toUpperCase();
 }
@@ -120,6 +137,13 @@ function normalizeGroupedShape(list) {
         due_date: task.due_date || null,
         assessment_title: section.assessment_title || 'Unassigned Assessment',
         group_name: section.group_name || 'Unknown Group',
+        group_id: task.group_id || section.group_id || null,
+        progress_percentage: task.progress_percentage || 0,
+        subtask_total: task.subtask_total || 0,
+        subtask_completed: task.subtask_completed || 0,
+        assigned_to_email: task.assigned_to_email || null,
+        created_at: task.created_at || null,
+        updated_at: task.updated_at || null,
       })),
     };
   });
@@ -153,6 +177,13 @@ function normalizeFlatShape(list) {
       due_date: task.due_date || null,
       assessment_title: task.assessment_title || 'Unassigned Assessment',
       group_name: task.group_name || 'Unknown Group',
+      group_id: task.group_id || null,
+      progress_percentage: task.progress_percentage || 0,
+      subtask_total: task.subtask_total || 0,
+      subtask_completed: task.subtask_completed || 0,
+      assigned_to_email: task.assigned_to_email || null,
+      created_at: task.created_at || null,
+      updated_at: task.updated_at || null,
     });
   });
 
@@ -182,6 +213,23 @@ function normalizeMyTasksResponse(payload) {
   return normalizeFlatShape(Array.isArray(flatList) ? flatList : []);
 }
 
+function highlightMentions(text) {
+  const value = String(text || '');
+  const parts = value.split(/(@[a-zA-Z0-9._%+-]+(?:@[a-zA-Z0-9.-]+\.[A-Za-z]{2,})?)/g);
+
+  return parts.map((part, idx) => {
+    if (/^@[a-zA-Z0-9._%+-]+(?:@[a-zA-Z0-9.-]+\.[A-Za-z]{2,})?$/.test(part)) {
+      return (
+        <span key={`mention-${idx}`} className="text-teal-700 dark:text-teal-300 font-semibold">
+          {part}
+        </span>
+      );
+    }
+
+    return <span key={`text-${idx}`}>{part}</span>;
+  });
+}
+
 export default function MyTasksPage() {
   const { user } = useAuth();
   const [sections, setSections] = useState([]);
@@ -190,13 +238,31 @@ export default function MyTasksPage() {
   const [actionError, setActionError] = useState(null);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
 
-  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [activeTaskTab, setActiveTaskTab] = useState('DETAILS');
+
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentError, setCommentError] = useState(null);
   const [commentDraft, setCommentDraft] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+
+  const [subtasks, setSubtasks] = useState([]);
+  const [subtasksLoading, setSubtasksLoading] = useState(false);
+  const [subtaskError, setSubtaskError] = useState(null);
+  const [subtaskDraft, setSubtaskDraft] = useState('');
+  const [subtaskBusyId, setSubtaskBusyId] = useState(null);
+  const [addingSubtask, setAddingSubtask] = useState(false);
+
+  const [isRequestChangeOpen, setIsRequestChangeOpen] = useState(false);
+  const [requestTask, setRequestTask] = useState(null);
+  const [requestMembers, setRequestMembers] = useState([]);
+  const [requestMembersLoading, setRequestMembersLoading] = useState(false);
+  const [requestTo, setRequestTo] = useState('');
+  const [requestReason, setRequestReason] = useState('');
+  const [requestError, setRequestError] = useState(null);
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
 
   const loadMyTasks = useCallback(async () => {
     try {
@@ -248,19 +314,39 @@ export default function MyTasksPage() {
     }
   }, []);
 
-  const openCommentsModal = async (task) => {
+  const loadSubtasks = useCallback(async (taskId) => {
+    setSubtasksLoading(true);
+    setSubtaskError(null);
+    try {
+      const response = await getTaskSubtasks(taskId);
+      setSubtasks(response?.data?.subtasks || response?.subtasks || []);
+    } catch {
+      setSubtaskError('Unable to load subtasks. Please try again.');
+      setSubtasks([]);
+    } finally {
+      setSubtasksLoading(false);
+    }
+  }, []);
+
+  const openTaskModal = async (task, defaultTab = 'DETAILS') => {
     setSelectedTask(task);
     setCommentDraft('');
-    setIsCommentsOpen(true);
-    await loadComments(task.task_id);
+    setSubtaskDraft('');
+    setActiveTaskTab(defaultTab);
+    setIsTaskModalOpen(true);
+    await Promise.all([loadComments(task.task_id), loadSubtasks(task.task_id)]);
   };
 
-  const closeCommentsModal = () => {
-    setIsCommentsOpen(false);
+  const closeTaskModal = () => {
+    setIsTaskModalOpen(false);
     setSelectedTask(null);
     setComments([]);
     setCommentDraft('');
     setCommentError(null);
+    setSubtasks([]);
+    setSubtaskDraft('');
+    setSubtaskError(null);
+    setActiveTaskTab('DETAILS');
   };
 
   const submitComment = async () => {
@@ -281,6 +367,117 @@ export default function MyTasksPage() {
     }
   };
 
+  const canEditSubtasks = useMemo(() => {
+    if (!selectedTask || !user) return false;
+    return selectedTask.assigned_to_email === user.email;
+  }, [selectedTask, user]);
+
+  const submitSubtask = async () => {
+    if (!selectedTask?.task_id) return;
+    if (!subtaskDraft.trim()) return;
+
+    setAddingSubtask(true);
+    setSubtaskError(null);
+    try {
+      await addTaskSubtask(selectedTask.task_id, subtaskDraft.trim());
+      setSubtaskDraft('');
+      await Promise.all([loadSubtasks(selectedTask.task_id), loadMyTasks()]);
+    } catch {
+      setSubtaskError('Unable to add subtask. Please try again.');
+    } finally {
+      setAddingSubtask(false);
+    }
+  };
+
+  const toggleSubtask = async (subtask) => {
+    if (!selectedTask?.task_id) return;
+
+    setSubtaskBusyId(subtask.subtask_id);
+    setSubtaskError(null);
+    try {
+      await updateTaskSubtask(selectedTask.task_id, subtask.subtask_id, {
+        is_completed: !Boolean(subtask.is_completed),
+      });
+      await Promise.all([loadSubtasks(selectedTask.task_id), loadMyTasks()]);
+    } catch {
+      setSubtaskError('Unable to update subtask. Please try again.');
+    } finally {
+      setSubtaskBusyId(null);
+    }
+  };
+
+  const openRequestChangeModal = async (task) => {
+    setRequestTask(task);
+    setIsRequestChangeOpen(true);
+    setRequestError(null);
+    setRequestReason('');
+    setRequestTo('');
+    setRequestMembersLoading(true);
+
+    try {
+      const groupId = task.group_id;
+      const data = await getGroupMembers(groupId);
+      const members = data?.data?.members || data?.members || [];
+      const normalized = members
+        .map((member) => ({
+          ...member,
+          member_id: member.user_id || member.id || null,
+        }))
+        .filter((member) => member.member_id && member.member_id !== user?.user_id);
+      setRequestMembers(normalized);
+    } catch {
+      setRequestError('Unable to load group members for request change.');
+      setRequestMembers([]);
+    } finally {
+      setRequestMembersLoading(false);
+    }
+  };
+
+  const closeRequestChangeModal = () => {
+    setIsRequestChangeOpen(false);
+    setRequestTask(null);
+    setRequestMembers([]);
+    setRequestTo('');
+    setRequestReason('');
+    setRequestError(null);
+    setRequestMembersLoading(false);
+    setRequestSubmitting(false);
+  };
+
+  const submitRequestChange = async () => {
+    if (!requestTask?.task_id) return;
+
+    if (!requestTo) {
+      setRequestError('Please select a teammate for this request.');
+      return;
+    }
+
+    const reason = requestReason.trim();
+    if (!reason) {
+      setRequestError('Please add a reason for your request.');
+      return;
+    }
+
+    if (requestTo === user?.user_id) {
+      setRequestError('You cannot request change with yourself.');
+      return;
+    }
+
+    setRequestSubmitting(true);
+    setRequestError(null);
+    try {
+      await requestTaskChange(requestTask.task_id, {
+        requested_to: requestTo,
+        reason,
+      });
+      closeRequestChangeModal();
+      await loadMyTasks();
+    } catch {
+      setRequestError('Unable to request change. Please try again.');
+      setRequestSubmitting(false);
+    }
+  };
+
   const handleAcceptTask = async (taskId) => {
     setUpdatingTaskId(taskId);
     setActionError(null);
@@ -289,22 +486,6 @@ export default function MyTasksPage() {
       await loadMyTasks();
     } catch {
       setActionError('Unable to update task status. Please try again.');
-    } finally {
-      setUpdatingTaskId(null);
-    }
-  };
-
-  const handleRequestTaskChange = async (taskId) => {
-    const reason = window.prompt('Optionally add a reason for this change request:', '');
-    if (reason === null) return;
-
-    setUpdatingTaskId(taskId);
-    setActionError(null);
-    try {
-      await requestTaskChange(taskId, { reason: reason.trim() });
-      await loadMyTasks();
-    } catch {
-      setActionError('Unable to request change. Please try again.');
     } finally {
       setUpdatingTaskId(null);
     }
@@ -399,6 +580,7 @@ export default function MyTasksPage() {
                     const taskUrgency = URGENCY_CONFIG[getUrgencyKey(task.due_date)] || URGENCY_CONFIG.NO_DUE_DATE;
                     const isUpdating = updatingTaskId === task.task_id;
                     const priority = String(task.priority || 'MEDIUM').toUpperCase();
+                    const taskProgress = Number(task.progress_percentage || 0);
 
                     return (
                       <div
@@ -406,7 +588,7 @@ export default function MyTasksPage() {
                         className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-3"
                       >
                         <div className="flex flex-col gap-2.5 md:flex-row md:items-start md:justify-between">
-                          <div className="space-y-1 min-w-0">
+                          <div className="space-y-1 min-w-0 flex-1">
                             <div className="flex items-center flex-wrap gap-2">
                               <p className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">{task.title}</p>
                               <Badge variant={statusBadgeVariant(status)}>{statusLabel(status)}</Badge>
@@ -427,7 +609,16 @@ export default function MyTasksPage() {
                                 Due {formatDate(task.due_date)}
                               </span>
                               <span>Priority: {priority}</span>
+                              <span>Subtasks: {task.subtask_completed || 0}/{task.subtask_total || 0}</span>
                             </div>
+
+                            <Progress
+                              value={taskProgress}
+                              max={100}
+                              label="Progress"
+                              showPercent
+                              className="pt-1"
+                            />
                           </div>
 
                           <div className="flex flex-wrap gap-2 md:justify-end">
@@ -444,7 +635,7 @@ export default function MyTasksPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => handleRequestTaskChange(task.task_id)}
+                                  onClick={() => openRequestChangeModal(task)}
                                   disabled={isUpdating}
                                 >
                                   Request Change
@@ -475,7 +666,7 @@ export default function MyTasksPage() {
                             )}
 
                             {status === 'DONE' && (
-                              <Badge variant="accepted" className="h-fit"> 
+                              <Badge variant="accepted" className="h-fit">
                                 <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                                 Completed
                               </Badge>
@@ -490,11 +681,11 @@ export default function MyTasksPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => openCommentsModal(task)}
+                              onClick={() => openTaskModal(task, 'COMMENTS')}
                               disabled={isUpdating}
                             >
                               <MessageSquareWarning className="w-3.5 h-3.5" />
-                              View Comments
+                              Task Details
                             </Button>
                           </div>
                         </div>
@@ -509,54 +700,227 @@ export default function MyTasksPage() {
       )}
 
       <Modal
-        isOpen={isCommentsOpen}
-        onClose={closeCommentsModal}
-        title={selectedTask ? `Comments: ${selectedTask.title}` : 'Task Comments'}
+        isOpen={isTaskModalOpen}
+        onClose={closeTaskModal}
+        title={selectedTask ? `Task: ${selectedTask.title}` : 'Task Details'}
       >
         <div className="space-y-4">
-          {commentsLoading ? (
-            <LoadingState message="Loading comments..." />
-          ) : (
-            <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-              {comments.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No comments yet.</p>
-              ) : (
-                comments.map((comment) => (
-                  <div
-                    key={comment.comment_id}
-                    className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2"
-                  >
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {comment.full_name || comment.email || 'Team member'}
-                    </p>
-                    <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">{comment.comment_text}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {commentError && (
-            <p className="text-sm text-red-700 dark:text-red-400">{commentError}</p>
-          )}
-
-          <div className="space-y-2">
-            <textarea
-              value={commentDraft}
-              onChange={(e) => setCommentDraft(e.target.value)}
-              placeholder="Add a comment..."
-              className="w-full min-h-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-            />
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="teal"
-                onClick={submitComment}
-                disabled={submittingComment || !commentDraft.trim()}
+          <div className="flex flex-wrap gap-2">
+            {TASK_TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTaskTab(tab)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                  activeTaskTab === tab
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                }`}
               >
-                {submittingComment ? 'Posting...' : 'Post Comment'}
-              </Button>
+                {tab[0] + tab.slice(1).toLowerCase()}
+              </button>
+            ))}
+          </div>
+
+          {activeTaskTab === 'DETAILS' && selectedTask && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-700 dark:text-slate-300">{selectedTask.description || 'No description provided.'}</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{statusLabel(selectedTask.status)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Due Date</p>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">{formatDate(selectedTask.due_date)}</p>
+                </div>
+              </div>
+              <Progress
+                value={Number(selectedTask.progress_percentage || 0)}
+                max={100}
+                label="Progress"
+                showPercent
+              />
             </div>
+          )}
+
+          {activeTaskTab === 'COMMENTS' && (
+            <div className="space-y-4">
+              {commentsLoading ? (
+                <LoadingState message="Loading comments..." />
+              ) : (
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {comments.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No comments yet.</p>
+                  ) : (
+                    comments.map((comment) => (
+                      <div
+                        key={comment.comment_id}
+                        className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {comment.full_name || comment.email || 'Team member'}
+                          </p>
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500">{formatDateTime(comment.created_at)}</p>
+                        </div>
+                        <p className="text-sm text-slate-700 dark:text-slate-200 mt-1 break-words">
+                          {highlightMentions(comment.comment_text)}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {commentError && (
+                <p className="text-sm text-red-700 dark:text-red-400">{commentError}</p>
+              )}
+
+              <div className="space-y-2">
+                <textarea
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                  placeholder="Write a comment... use @name to mention a teammate"
+                  className="w-full min-h-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="teal"
+                    onClick={submitComment}
+                    disabled={submittingComment || !commentDraft.trim()}
+                  >
+                    {submittingComment ? 'Posting...' : 'Post Comment'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTaskTab === 'SUBTASKS' && (
+            <div className="space-y-3">
+              {subtasksLoading ? (
+                <LoadingState message="Loading subtasks..." />
+              ) : subtasks.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No subtasks yet.</p>
+              ) : (
+                <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                  {subtasks.map((subtask) => (
+                    <label
+                      key={subtask.subtask_id}
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2 bg-slate-50 dark:bg-slate-900"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(subtask.is_completed)}
+                        disabled={!canEditSubtasks || subtaskBusyId === subtask.subtask_id}
+                        onChange={() => toggleSubtask(subtask)}
+                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                      />
+                      <span className={`text-sm ${subtask.is_completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {subtask.title}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {subtaskError && <p className="text-sm text-red-700 dark:text-red-400">{subtaskError}</p>}
+
+              <div className="space-y-2">
+                <input
+                  value={subtaskDraft}
+                  onChange={(e) => setSubtaskDraft(e.target.value)}
+                  placeholder="Add a subtask"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  disabled={!canEditSubtasks}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="teal"
+                    onClick={submitSubtask}
+                    disabled={!canEditSubtasks || addingSubtask || !subtaskDraft.trim()}
+                  >
+                    {addingSubtask ? 'Adding...' : 'Add Subtask'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTaskTab === 'ACTIVITY' && selectedTask && (
+            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+                Task created: {formatDateTime(selectedTask.created_at)}
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+                Last updated: {formatDateTime(selectedTask.updated_at)}
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+                Comments: {comments.length}
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+                Subtasks: {subtasks.filter((s) => Boolean(s.is_completed)).length}/{subtasks.length}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isRequestChangeOpen}
+        onClose={closeRequestChangeModal}
+        title="Request Change"
+      >
+        <div className="space-y-3">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 bg-slate-50 dark:bg-slate-900">
+            <p className="text-xs text-slate-500 dark:text-slate-400">Task title</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{requestTask?.title || '-'}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Current assignee</p>
+            <p className="text-sm text-slate-700 dark:text-slate-200">{user?.full_name || user?.email || 'You'}</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Request with / Swap with</label>
+            <select
+              value={requestTo}
+              onChange={(e) => setRequestTo(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              disabled={requestMembersLoading || requestSubmitting}
+            >
+              <option value="">Select a teammate</option>
+              {requestMembers.map((member) => (
+                <option key={member.member_id} value={member.member_id}>
+                  {member.full_name || member.email}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Reason</label>
+            <textarea
+              value={requestReason}
+              onChange={(e) => setRequestReason(e.target.value)}
+              placeholder="Write a short reason"
+              className="w-full min-h-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              disabled={requestSubmitting}
+            />
+          </div>
+
+          {requestError && (
+            <p className="text-sm text-red-700 dark:text-red-400">{requestError}</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={closeRequestChangeModal} disabled={requestSubmitting}>
+              Cancel
+            </Button>
+            <Button variant="teal" size="sm" onClick={submitRequestChange} disabled={requestSubmitting}>
+              {requestSubmitting ? 'Submitting...' : 'Submit'}
+            </Button>
           </div>
         </div>
       </Modal>

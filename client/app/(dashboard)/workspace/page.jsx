@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { getGroups, deleteGroup, getGroupMembers, addGroupMember } from '@/services/groupService';
+import { getGroups, deleteGroup, getGroupMembers, addGroupMember, getGroupMessages, addGroupMessage } from '@/services/groupService';
 import { getTasks, updateTaskStatus } from '@/services/taskService';
 import { getContributions } from '@/services/contributionService';
 import { getCharter } from '@/services/charterService';
@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
+import Progress from '@/components/ui/Progress';
 import CreateGroupButton from '@/components/workspace/CreateGroupButton';
 import CreateGroupModal from '@/components/workspace/CreateGroupModal';
 import AddTaskModal from '@/components/workspace/AddTaskModal';
@@ -71,6 +72,12 @@ export default function GroupWorkspacePage() {
   const [memberActionError, setMemberActionError] = useState('');
   const [contributions, setContributions] = useState([]);
   const [responsibilities, setResponsibilities] = useState([]);
+  const [activeTab, setActiveTab] = useState('OVERVIEW');
+  const [groupMessages, setGroupMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [messageError, setMessageError] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   const refreshGroups = useCallback(async () => {
     try {
@@ -159,10 +166,51 @@ export default function GroupWorkspacePage() {
     }
   }, []);
 
+  const fetchGroupMessages = useCallback(async (group) => {
+    if (!group) {
+      setGroupMessages([]);
+      return;
+    }
+
+    setMessagesLoading(true);
+    setMessageError('');
+
+    try {
+      const groupId = group.group_id || group.id;
+      const data = await getGroupMessages(groupId);
+      setGroupMessages(data?.data?.messages || data?.messages || []);
+    } catch {
+      setGroupMessages([]);
+      setMessageError('Unable to load group chat.');
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchGroupMembers(selectedGroup);
     fetchTeamMeta(selectedGroup);
-  }, [selectedGroup, fetchGroupMembers, fetchTeamMeta]);
+    fetchGroupMessages(selectedGroup);
+  }, [selectedGroup, fetchGroupMembers, fetchTeamMeta, fetchGroupMessages]);
+
+  const handleSendMessage = async () => {
+    if (!selectedGroup) return;
+    const text = messageDraft.trim();
+    if (!text) return;
+
+    try {
+      setSendingMessage(true);
+      setMessageError('');
+      const groupId = selectedGroup.group_id || selectedGroup.id;
+      await addGroupMessage(groupId, text);
+      setMessageDraft('');
+      await fetchGroupMessages(selectedGroup);
+    } catch {
+      setMessageError('Unable to send message.');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
 
   const handleGroupCreated = useCallback(async () => {
     const list = await refreshGroups();
@@ -295,6 +343,33 @@ export default function GroupWorkspacePage() {
     return items.slice(0, 5);
   }, [tasks, responsibilities]);
 
+  const assessmentSummaries = useMemo(() => {
+    const grouped = new Map();
+
+    tasks.forEach((task) => {
+      const key = task.assessment_id || task.assessment_title || 'unassigned';
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          assessment_id: task.assessment_id || null,
+          title: task.assessment_title || 'Unassigned Assessment',
+          due_date: task.assessment_due_date || null,
+          total: 0,
+          done: 0,
+          inProgress: 0,
+          todo: 0,
+        });
+      }
+
+      const summary = grouped.get(key);
+      summary.total += 1;
+      if (task.status === 'DONE') summary.done += 1;
+      if (task.status === 'IN_PROGRESS') summary.inProgress += 1;
+      if (task.status === 'TO_DO' || task.status === 'PENDING_ACCEPTANCE') summary.todo += 1;
+    });
+
+    return Array.from(grouped.values());
+  }, [tasks]);
+
   if (loadingGroups) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -370,6 +445,30 @@ export default function GroupWorkspacePage() {
       )}
 
       {selectedGroup && (
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'OVERVIEW', label: 'Overview' },
+            { id: 'ASSESSMENTS', label: 'Assessments' },
+            { id: 'MEMBERS', label: 'Members' },
+            { id: 'GROUP_CHAT', label: 'Group Chat' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedGroup && (activeTab === 'OVERVIEW' || activeTab === 'MEMBERS') && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <Card className="p-5 xl:col-span-2">
             <div className="flex items-center gap-2 mb-4">
@@ -450,7 +549,7 @@ export default function GroupWorkspacePage() {
         </div>
       )}
 
-      {selectedGroup && (
+      {selectedGroup && activeTab === 'OVERVIEW' && (
         <>
           {loadingTasks ? (
             <div className="flex items-center justify-center h-48">
@@ -557,7 +656,7 @@ export default function GroupWorkspacePage() {
         </>
       )}
 
-      {selectedGroup && (
+      {selectedGroup && activeTab === 'OVERVIEW' && (
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-4">
             <Activity className="w-4 h-4 text-indigo-500" />
@@ -574,6 +673,70 @@ export default function GroupWorkspacePage() {
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {selectedGroup && activeTab === 'ASSESSMENTS' && (
+        <Card className="p-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-4">Assessments</h3>
+          {assessmentSummaries.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No assessments found yet. Generate tasks from SmartGroup Assistant to start.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {assessmentSummaries.map((summary) => {
+                const pct = summary.total > 0 ? Math.round((summary.done / summary.total) * 100) : 0;
+                return (
+                  <div key={summary.assessment_id || summary.title} className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/70 dark:bg-slate-800/40 space-y-2">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{summary.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Due: {formatDate(summary.due_date)}</p>
+                    <Progress value={pct} max={100} showPercent label={`${summary.done}/${summary.total} complete`} />
+                    <div className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-3">
+                      <span>Done: {summary.done}</span>
+                      <span>In Progress: {summary.inProgress}</span>
+                      <span>Pending: {summary.todo}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {selectedGroup && activeTab === 'GROUP_CHAT' && (
+        <Card className="p-5 space-y-4">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Group Chat</h3>
+          {messagesLoading ? (
+            <LoadingState message="Loading group chat..." />
+          ) : groupMessages.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No messages yet. Start the group discussion.</p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+              {groupMessages.map((message) => (
+                <div key={message.message_id} className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2 bg-slate-50 dark:bg-slate-900">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{message.full_name || message.email || 'Team member'}</p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">{new Date(message.created_at).toLocaleString()}</p>
+                  </div>
+                  <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">{message.message_text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {messageError && <p className="text-sm text-red-700 dark:text-red-400">{messageError}</p>}
+
+          <div className="flex gap-2">
+            <input
+              value={messageDraft}
+              onChange={(e) => setMessageDraft(e.target.value)}
+              placeholder="Type a message"
+              className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+            />
+            <Button onClick={handleSendMessage} disabled={sendingMessage || !messageDraft.trim()}>
+              {sendingMessage ? 'Sending...' : 'Send'}
+            </Button>
+          </div>
         </Card>
       )}
 
