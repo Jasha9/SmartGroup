@@ -9,12 +9,28 @@ export async function getGroups() {
   }
 }
 
-export async function generateTasks(assignmentText) {
+export async function generateTasks({ groupId = '', assignmentText = '', assignmentFile = null } = {}) {
   try {
-    const response = await api.post("/ai/generate-tasks", { assignmentText });
+    const formData = new FormData();
+
+    if (groupId) {
+      formData.append('groupId', groupId);
+    }
+
+    if (assignmentText.trim()) {
+      formData.append('assignmentText', assignmentText.trim());
+    }
+
+    if (assignmentFile) {
+      formData.append('assignmentFile', assignmentFile);
+    }
+
+    const response = await api.post('/ai/generate-tasks', formData);
     return response.data;
   } catch (err) {
-    throw new Error(err.response?.data?.error || "Failed to generate tasks.");
+    const error = new Error(err.response?.data?.error || "Failed to generate tasks.");
+    error.response = err.response;
+    throw error;
   }
 }
 

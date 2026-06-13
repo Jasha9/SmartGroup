@@ -3,12 +3,13 @@
 import { Bolt, ChartLine, Play, Sparkles, Users } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import ThemeToggle from '@/components/theme/ThemeToggle';
+import { useAuth } from '@/context/AuthContext';
 import { googleLogin } from '@/services/authService';
 
 const productCards = [
@@ -61,10 +62,17 @@ const explanationCards = [
 
 export default function LoginPage() {
   const router = useRouter();
+  const { isAuthenticated, loading, refreshUser } = useAuth();
   const hasGoogleClientId = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
   const [demoForm, setDemoForm] = useState({ name: '', email: '', message: '' });
   const [isDemoSubmitted, setIsDemoSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      router.replace('/dashboard');
+    }
+  }, [isAuthenticated, loading, router]);
 
   const openDemoPopup = () => setIsDemoOpen(true);
   const closeDemoPopup = () => {
@@ -93,7 +101,9 @@ export default function LoginPage() {
 
     try {
       await googleLogin(credential);
-      router.push('/dashboard');
+      await refreshUser();
+      router.replace('/dashboard');
+      router.refresh();
     } catch (error) {
       const serverMessage = error?.response?.data?.error || error?.message || 'Google login failed. Please try again.';
       console.error('Google login failed:', error?.response || error);

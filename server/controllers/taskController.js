@@ -2,6 +2,7 @@
 
 const ACCEPTED_TASK_STATUSES = ['TO_DO', 'IN_PROGRESS', 'DONE', 'NEGOTIATING', 'CHANGE_REQUESTED', 'PENDING_ACCEPTANCE'];
 const NEGOTIATION_STATUSES = ['PENDING', 'ACCEPTED', 'REJECTED'];
+const MAX_WORKLOAD_VARIANCE_HOURS = 2;
 
 function buildTaskSelectClause() {
   return `SELECT t.task_id, t.group_id, t.assessment_id,
@@ -96,6 +97,39 @@ function groupTasksByAssessment(tasks) {
   }
 
   return Array.from(grouped.values());
+}
+
+function normalizeTaskHours(task) {
+  const value = Number(task?.estimated_hours ?? task?.effort_hours ?? 1);
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(8, Math.round(value)));
+}
+
+function evaluateWorkloadBalance(tasks, memberEmails) {
+  const totalsByEmail = new Map(memberEmails.map((email) => [String(email).trim().toLowerCase(), 0]));
+
+  for (const task of tasks) {
+    const email = String(task?.assigned_to_email || '').trim().toLowerCase();
+    if (!email || !totalsByEmail.has(email)) continue;
+    totalsByEmail.set(email, totalsByEmail.get(email) + normalizeTaskHours(task));
+  }
+
+  const totals = Array.from(totalsByEmail.values());
+  if (totals.length === 0) {
+    return { isBalanced: true, maxHours: 0, minHours: 0, varianceHours: 0, totalsByEmail };
+  }
+
+  const maxHours = Math.max(...totals);
+  const minHours = Math.min(...totals);
+  const varianceHours = maxHours - minHours;
+
+  return {
+    isBalanced: varianceHours <= MAX_WORKLOAD_VARIANCE_HOURS,
+    maxHours,
+    minHours,
+    varianceHours,
+    totalsByEmail,
+  };
 }
 
 async function syncTaskProgress(client, taskId) {
@@ -930,6 +964,52 @@ async function bulkSaveTasks(req, res) {
       createdBy: req.user.user_id,
     });
 
+    const memberRes = await client.query(
+      `SELECT u.user_id, lower(u.email) AS email
+       FROM memberships m
+       JOIN users u ON u.user_id = m.user_id
+       WHERE m.group_id = $1`,
+      [groupId]
+    );
+
+    const membersByEmail = new Map(memberRes.rows.map((row) => [row.email, row.user_id]));
+    const memberEmails = Array.from(membersByEmail.keys());
+
+    const unassigned = tasks.filter((task) => !String(task?.assigned_to_email || '').trim());
+    if (unassigned.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'Assign every task to a team member before publishing.' });
+    }
+
+    const unknownAssignees = tasks
+      .map((task) => String(task?.assigned_to_email || '').trim().toLowerCase())
+      .filter((email) => email && !membersByEmail.has(email));
+
+    if (unknownAssignees.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: `One or more assignees are not members of this group: ${Array.from(new Set(unknownAssignees)).join(', ')}`,
+      });
+    }
+
+    const workload = evaluateWorkloadBalance(tasks, memberEmails);
+    if (!workload.isBalanced) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: `Workload is unbalanced. Maximum workload difference is ${workload.varianceHours}h. Reduce it to ${MAX_WORKLOAD_VARIANCE_HOURS}h or less before publishing.`,
+        data: {
+          workload: {
+            maxHours: workload.maxHours,
+            minHours: workload.minHours,
+            varianceHours: workload.varianceHours,
+            limitHours: MAX_WORKLOAD_VARIANCE_HOURS,
+          },
+        },
+      });
+    }
+
     const saved = [];
     for (const task of tasks) {
       if (!task.title || !task.title.trim()) {
@@ -949,15 +1029,7 @@ async function bulkSaveTasks(req, res) {
         }
         assignedTo = assignedUser.rows[0].user_id;
       } else if (task.assigned_to_email) {
-        const assignedUser = await client.query(
-          `SELECT user_id FROM users WHERE lower(email) = lower($1)` ,
-          [String(task.assigned_to_email).trim()]
-        );
-        if (assignedUser.rowCount === 0) {
-          await client.query('ROLLBACK');
-          return res.status(404).json({ success: false, error: `Assigned user not found for email: ${task.assigned_to_email}` });
-        }
-        assignedTo = assignedUser.rows[0].user_id;
+        assignedTo = membersByEmail.get(String(task.assigned_to_email).trim().toLowerCase()) || null;
       }
 
       const taskRes = await client.query(

@@ -42,6 +42,8 @@ function formatDateTime(dateStr) {
   return d.toLocaleString('en-AU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+const BOARD_STATUSES = ['TO_DO', 'IN_PROGRESS', 'DONE'];
+
 function extractMentionTokens(text) {
   const matches = String(text || '').matchAll(/@([a-zA-Z0-9._%+-]+(?:\s+[a-zA-Z0-9._%+-]+)*)/g);
   return Array.from(matches).map((m) => String(m[1] || '').trim()).filter(Boolean);
@@ -266,6 +268,40 @@ export default function GroupWorkspacePage() {
     });
   }, [assessments, tasks]);
 
+  const assessmentBoards = useMemo(() => {
+    const indexedAssessments = new Map(
+      assessments.map((assessment) => [assessment.assessment_id, {
+        assessment_id: assessment.assessment_id,
+        title: assessment.title,
+        due_date: assessment.due_date || null,
+        tasks: [],
+      }])
+    );
+
+    for (const task of tasks) {
+      const key = task.assessment_id || 'unassigned';
+      if (!indexedAssessments.has(key)) {
+        indexedAssessments.set(key, {
+          assessment_id: key,
+          title: 'Unassigned Assessment',
+          due_date: null,
+          tasks: [],
+        });
+      }
+      indexedAssessments.get(key).tasks.push(task);
+    }
+
+    return Array.from(indexedAssessments.values())
+      .filter((section) => section.tasks.length > 0)
+      .map((section) => ({
+        ...section,
+        tasksByStatus: BOARD_STATUSES.reduce((acc, status) => {
+          acc[status] = section.tasks.filter((task) => normalizeStatus(task.status) === status);
+          return acc;
+        }, {}),
+      }));
+  }, [assessments, tasks]);
+
   const memberStats = useMemo(() => {
     return groupMembers.map((member) => {
       const assigned = tasks.filter((task) => task.assigned_to_user_id === member.user_id || task.assigned_to_email === member.email || task.assigned_to_name === member.full_name);
@@ -377,15 +413,63 @@ export default function GroupWorkspacePage() {
                 <Card>
                   <CardHeader><CardTitle>Assessments</CardTitle><CardDescription>Assessment-level workload and progress.</CardDescription></CardHeader>
                   <CardContent className="space-y-3">
-                    {loadingAssessments || loadingTasks ? <LoadingState message="Loading assessments..." /> : assessmentProgress.map((item) => (
-                      <div key={item.assessment.assessment_id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div><p className="font-medium text-slate-900 dark:text-slate-100">{item.assessment.title}</p><p className="text-xs text-slate-500 dark:text-slate-400">Due {formatDate(item.assessment.due_date)}</p></div>
-                          <div className="flex flex-wrap gap-1"><Badge variant="default">To Do {item.todo}</Badge><Badge variant="blue">In Progress {item.inProgress}</Badge><Badge variant="accepted">Done {item.done}</Badge></div>
+                    {loadingAssessments || loadingTasks ? <LoadingState message="Loading assessments..." /> : (
+                      <>
+                        {assessmentProgress.map((item) => (
+                          <div key={item.assessment.assessment_id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div><p className="font-medium text-slate-900 dark:text-slate-100">{item.assessment.title}</p><p className="text-xs text-slate-500 dark:text-slate-400">Due {formatDate(item.assessment.due_date)}</p></div>
+                              <div className="flex flex-wrap gap-1"><Badge variant="default">To Do {item.todo}</Badge><Badge variant="blue">In Progress {item.inProgress}</Badge><Badge variant="accepted">Done {item.done}</Badge></div>
+                            </div>
+                            <Progress value={item.progress} variant="teal" />
+                          </div>
+                        ))}
+
+                        <div className="pt-2 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Task Board By Assessment</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Grouped into To Do, In Progress, and Done</p>
+                          </div>
+
+                          {assessmentBoards.length === 0 ? (
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 text-sm text-slate-500 dark:text-slate-400">
+                              No tasks found for this group yet.
+                            </div>
+                          ) : assessmentBoards.map((board) => (
+                            <div key={board.assessment_id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-medium text-slate-900 dark:text-slate-100">{board.title}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">Due {formatDate(board.due_date)}</p>
+                                </div>
+                                <Badge variant="outline">{board.tasks.length} tasks</Badge>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {BOARD_STATUSES.map((status) => (
+                                  <div key={`${board.assessment_id}-${status}`} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 bg-slate-50/80 dark:bg-slate-900/50">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 dark:text-slate-400">{status.replace('_', ' ')}</p>
+                                      <Badge variant="default">{board.tasksByStatus[status].length}</Badge>
+                                    </div>
+                                    <div className="space-y-2">
+                                      {board.tasksByStatus[status].length === 0 ? (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">No tasks</p>
+                                      ) : board.tasksByStatus[status].map((task) => (
+                                        <div key={task.task_id} className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2">
+                                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{task.title}</p>
+                                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{task.assigned_to_name || task.assigned_to_email || 'Unassigned'} • Due {formatDate(task.due_date)}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <Progress value={item.progress} variant="teal" />
-                      </div>
-                    ))}
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               )}
