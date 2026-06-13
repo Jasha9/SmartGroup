@@ -9,7 +9,7 @@ export async function getGroups() {
   }
 }
 
-export async function generateTasks({ groupId = '', assignmentText = '', assignmentFile = null } = {}) {
+export async function generateTasks({ groupId = '', assignmentText = '', assignmentFile = null, assessmentTitle = '', assessmentDueDate = '' } = {}) {
   try {
     const formData = new FormData();
 
@@ -19,6 +19,14 @@ export async function generateTasks({ groupId = '', assignmentText = '', assignm
 
     if (assignmentText.trim()) {
       formData.append('assignmentText', assignmentText.trim());
+    }
+
+    if (assessmentTitle.trim()) {
+      formData.append('assessmentTitle', assessmentTitle.trim());
+    }
+
+    if (assessmentDueDate) {
+      formData.append('assessmentDueDate', assessmentDueDate);
     }
 
     if (assignmentFile) {

@@ -8,15 +8,17 @@
   --sg-primary: #0f172a;
   --sg-secondary: #14b8a6;
   --sg-accent: #6366f1;
-  --sg-success: #22c55e;
+  --sg-success: #10b981;
   --sg-warning: #f59e0b;
+  --sg-danger: #ef4444;
+  --sg-info: #3b82f6;
   --sg-bg: #f8fafc;
-  --sg-surface: #ffffff;
+  --sg-surface: rgba(255, 255, 255, 0.8);
 }
 
 .dark {
-  --sg-bg: #020617;
-  --sg-surface: #0f172a;
+  --sg-bg: #0f172a;
+  --sg-surface: rgba(17, 24, 39, 0.88);
 }
 
 @layer base {
@@ -26,10 +28,16 @@
   body {
     @apply text-slate-900 dark:text-slate-100 antialiased;
     background:
-      radial-gradient(1000px 500px at -10% -10%, rgba(20, 184, 166, 0.15), transparent 45%),
-      radial-gradient(900px 450px at 110% 0%, rgba(99, 102, 241, 0.1), transparent 40%),
+      radial-gradient(1100px 580px at -15% -10%, rgba(20, 184, 166, 0.2), transparent 48%),
+      radial-gradient(980px 520px at 110% -10%, rgba(99, 102, 241, 0.18), transparent 46%),
       var(--sg-bg);
     font-family: 'Inter', system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight;
+  }
+  a, button, input, textarea, select {
+    @apply transition-all duration-200;
   }
   html {
     @apply scroll-smooth;
@@ -38,10 +46,61 @@
 
 @layer components {
   .sg-page-shell {
-    @apply rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/85 dark:bg-slate-900/80 backdrop-blur-sm shadow-sm;
+    @apply rounded-[24px] border border-white/70 dark:border-slate-800/90 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg shadow-[0_10px_40px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_40px_rgba(2,6,23,0.55)];
   }
 
   .sg-eyebrow {
-    @apply text-xs uppercase tracking-[0.18em] font-semibold text-teal-700 dark:text-teal-300;
+    @apply text-xs uppercase tracking-[0.2em] font-semibold text-teal-700 dark:text-teal-300;
+  }
+
+  .sg-gradient-text {
+    @apply bg-gradient-to-r from-teal-500 to-indigo-500 bg-clip-text text-transparent;
+  }
+
+  .sg-glass {
+    @apply rounded-[24px] border border-white/70 dark:border-slate-800/90 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg shadow-[0_10px_40px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_40px_rgba(2,6,23,0.55)];
+  }
+
+  .sg-skeleton {
+    @apply animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-700/60;
+  }
+
+  .sg-hover-lift {
+    @apply transition-transform duration-200 hover:-translate-y-0.5;
+  }
+
+  .sg-progress-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      rgba(20, 184, 166, 0.75),
+      rgba(99, 102, 241, 0.9),
+      rgba(20, 184, 166, 0.75)
+    );
+    background-size: 200% 100%;
+    animation: sg-shimmer 2s linear infinite;
+  }
+
+  .sg-fade-in {
+    animation: sg-fade-in 260ms ease-out;
+  }
+}
+
+@keyframes sg-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes sg-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

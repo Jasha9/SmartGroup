@@ -11,16 +11,18 @@ import {
   BarChart3,
   Zap,
   X,
+  CheckSquare,
+  BellRing,
 } from 'lucide-react';
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'My Tasks', href: '/my-tasks', icon: Users },
-  { label: 'SmartGroup Assistant', href: '/smartgroup-assistant', icon: Brain },
+  { label: 'My Tasks', href: '/my-tasks', icon: CheckSquare },
+  { label: 'AI Assistant', href: '/smartgroup-assistant', icon: Brain },
   { label: 'Team Space', href: '/workspace', icon: Users },
   { label: 'Responsibilities', href: '/charter', icon: FileText },
   { label: 'Team Progress', href: '/team-insights', icon: BarChart3 },
-  { label: 'Alerts', href: '/action-center', icon: Zap },
+  { label: 'Alerts', href: '/action-center', icon: BellRing },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -50,16 +52,16 @@ export default function Sidebar({ isOpen, onClose }) {
       {/* Sidebar panel */}
       <aside
         className={`
-          fixed top-0 left-0 h-full w-64 z-30 flex flex-col
-          bg-white dark:bg-slate-900
-          border-r border-slate-200 dark:border-slate-800
+          fixed top-0 left-0 h-full w-[280px] z-30 flex flex-col
+          bg-white/85 dark:bg-slate-900/90 backdrop-blur-xl
+          border-r border-slate-200/80 dark:border-slate-800
           transition-transform duration-300 ease-in-out
           lg:relative lg:translate-x-0 lg:flex-shrink-0
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
         {/* Logo */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200/80 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
             <img
               src="/smartgroup-logo.svg"
@@ -68,8 +70,8 @@ export default function Sidebar({ isOpen, onClose }) {
             />
             <div>
               <span className="font-bold text-lg text-slate-900 dark:text-slate-100 block leading-tight">SmartGroup</span>
-              <span className="text-[10px] uppercase tracking-[0.14em] text-teal-600 dark:text-teal-300">
-                AI-powered accountability for student teams
+              <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                AI Productivity Platform
               </span>
             </div>
           </div>
@@ -82,7 +84,7 @@ export default function Sidebar({ isOpen, onClose }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(({ label, href, icon: Icon }) => {
             const isActive = pathname === href || pathname.startsWith(href + '/');
             return (
@@ -91,14 +93,15 @@ export default function Sidebar({ isOpen, onClose }) {
                 href={href}
                 onClick={onClose}
                 className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                  relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
                   ${
                     isActive
-                      ? 'bg-[#0f172a] text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      ? 'bg-gradient-to-r from-teal-500/90 to-indigo-500/90 text-white shadow-[0_8px_24px_rgba(99,102,241,0.35)]'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/90 dark:hover:bg-slate-800/80'
                   }
                 `}
               >
+                {isActive && <span className="absolute left-1 top-2 bottom-2 w-1 rounded-full bg-white/90" />}
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {label}
               </Link>
@@ -107,7 +110,7 @@ export default function Sidebar({ isOpen, onClose }) {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="px-4 py-4 border-t border-slate-200/80 dark:border-slate-800">
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
               {initials}

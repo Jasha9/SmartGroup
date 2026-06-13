@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Zap } from 'lucide-react';
+import { Menu, Sparkles } from 'lucide-react';
 import ThemeToggle from '@/components/theme/ThemeToggle';
 import { useAuth } from '@/context/AuthContext';
 import { getNotifications } from '@/services/notificationService';
+import { subscribeDataSync } from '@/lib/dataSync';
 
 const pageTitles = {
   '/dashboard': 'Dashboard',
@@ -27,7 +28,7 @@ export default function Topbar({ onMenuClick }) {
   const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
+  const refreshUnreadCount = () => {
     if (!user) return;
     getNotifications()
       .then((data) => {
@@ -35,6 +36,28 @@ export default function Topbar({ onMenuClick }) {
         setUnreadCount(list.filter((n) => !n.is_read).length);
       })
       .catch(() => setUnreadCount(0));
+  };
+
+  useEffect(() => {
+    refreshUnreadCount();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const unsubscribe = subscribeDataSync(() => {
+      refreshUnreadCount();
+    });
+
+    const onFocus = () => {
+      refreshUnreadCount();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
   }, [user]);
 
   const initials = user?.full_name
@@ -44,7 +67,7 @@ export default function Topbar({ onMenuClick }) {
     : '?';
 
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-4 px-6 py-3.5 bg-white/75 dark:bg-slate-900/75 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800">
+    <header className="sticky top-0 z-10 flex items-center gap-4 px-6 py-3.5 bg-white/70 dark:bg-slate-900/75 backdrop-blur-xl border-b border-slate-200/70 dark:border-slate-800">
       <button
         onClick={onMenuClick}
         className="lg:hidden p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -54,10 +77,10 @@ export default function Topbar({ onMenuClick }) {
       </button>
 
       <div className="flex-1">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-teal-700 dark:text-teal-300 font-semibold">
-          SmartGroup Assistant
+        <p className="text-[11px] uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300 font-semibold">
+          SmartGroup AI Workspace
         </p>
-        <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h1>
+        <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h1>
       </div>
 
       <div className="flex items-center gap-1">
@@ -65,7 +88,7 @@ export default function Topbar({ onMenuClick }) {
           onClick={() => router.push('/action-center')}
           className="relative p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
-          <Zap className="w-5 h-5" />
+          <Sparkles className="w-5 h-5" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-teal-600 text-white text-[10px] font-bold flex items-center justify-center">
               {unreadCount > 9 ? '9+' : unreadCount}

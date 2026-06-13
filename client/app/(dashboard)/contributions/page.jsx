@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import Badge from '@/components/ui/Badge';
 import LoadingState from '@/components/ui/LoadingState';
 import Progress from '@/components/ui/Progress';
+import { subscribeDataSync } from '@/lib/dataSync';
 
 function normalizeStatus(status) {
   return String(status || 'TO_DO').toUpperCase();
@@ -21,8 +22,7 @@ export default function ContributionDashboardPage() {
   const [error, setError] = useState(null);
   const [sections, setSections] = useState([]);
 
-  useEffect(() => {
-    async function loadData() {
+  const loadData = async () => {
       try {
         setError(null);
         const groupsRes = await getGroups();
@@ -97,9 +97,26 @@ export default function ContributionDashboardPage() {
       } finally {
         setLoading(false);
       }
-    }
+    };
 
+  useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeDataSync(() => {
+      loadData();
+    });
+
+    const onFocus = () => {
+      loadData();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const overall = useMemo(() => {

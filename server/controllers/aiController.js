@@ -60,21 +60,53 @@ async function getGroupMemberCount(groupId) {
   return result.rows[0]?.member_count || 0;
 }
 
-function buildAssignmentPrompt(assignmentText, memberCount) {
+function parseAssessmentDueDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function getPlanningWindowDays(dueDate, now = new Date()) {
+  if (!dueDate) return null;
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  const diffMs = end.getTime() - start.getTime();
+  return Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+}
+
+function buildAssignmentPrompt(assignmentText, memberCount, assessmentMeta = {}) {
   const normalizedMemberCount = Math.max(1, Number(memberCount) || 1);
   const minimumTasks = normalizedMemberCount;
   const targetTasks = Math.min(Math.max(normalizedMemberCount, 4), 8);
+  const title = String(assessmentMeta.title || '').trim();
+  const dueDate = assessmentMeta.dueDate || null;
+  const planningWindowDays = Number.isFinite(assessmentMeta.planningWindowDays)
+    ? Math.max(0, assessmentMeta.planningWindowDays)
+    : null;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dueIso = dueDate ? dueDate.toISOString().slice(0, 10) : null;
 
   return [
     `Team size: ${normalizedMemberCount} members.`,
+    title ? `Assessment title: ${title}.` : null,
+    `Today's date: ${todayIso}.`,
+    dueIso ? `Assessment due date: ${dueIso}.` : 'Assessment due date: not provided.',
+    planningWindowDays === null
+      ? 'Planning window: unknown. Keep timeline assumptions conservative.'
+      : planningWindowDays === 0
+        ? 'Planning window: due now or overdue. Prioritise immediate deliverables and critical path work.'
+        : `Planning window: ${planningWindowDays} day(s) until due date.`,
     `Generate at least ${minimumTasks} tasks and aim for around ${targetTasks} tasks so the work can be distributed fairly.`,
     'Split large work into smaller concrete tasks when needed so no one member gets a much heavier workload than the others.',
     'Keep the estimated_hours balanced across the overall plan so each member can receive a similar total workload.',
+    'Adjust task granularity to the available days left so the team has actionable checkpoints before the due date.',
     'Avoid a plan where one task carries most of the effort unless the assignment requirements force it.',
     '',
     'Assignment brief:',
     assignmentText,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 async function getOrCreateTaskPlan(client, groupId) {
@@ -220,6 +252,10 @@ async function generateTasks(req, res) {
     return res.status(500).json({ success: false, error: 'Failed to load group member count.' });
   }
 
+  const assessmentTitle = String(req.body?.assessmentTitle || '').trim();
+  const assessmentDueDate = parseAssessmentDueDate(req.body?.assessmentDueDate);
+  const planningWindowDays = getPlanningWindowDays(assessmentDueDate);
+
   if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({ success: false, error: "OPENAI_API_KEY is not configured on the server." });
   }
@@ -244,7 +280,11 @@ async function generateTasks(req, res) {
   let completion;
   try {
     const openai = getOpenAIClient();
-    const planningPrompt = buildAssignmentPrompt(assignmentText, memberCount);
+    const planningPrompt = buildAssignmentPrompt(assignmentText, memberCount, {
+      title: assessmentTitle,
+      dueDate: assessmentDueDate,
+      planningWindowDays,
+    });
     completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -308,7 +348,13 @@ async function generateTasks(req, res) {
 
   return res.json({
     success: true,
-    data: { tasks, usage, memberCount },
+    data: {
+      tasks,
+      usage,
+      memberCount,
+      planningWindowDays,
+      dueDate: assessmentDueDate ? assessmentDueDate.toISOString() : null,
+    },
   });
 }
 

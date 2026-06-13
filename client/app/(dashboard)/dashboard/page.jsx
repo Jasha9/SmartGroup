@@ -7,14 +7,16 @@ import { getGroups, getGroupAssessments } from '@/services/groupService';
 import { getMyTasks } from '@/services/taskService';
 import { getNotifications } from '@/services/notificationService';
 import { getCharter } from '@/services/charterService';
+import { subscribeDataSync } from '@/lib/dataSync';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
 import Progress from '@/components/ui/Progress';
-import { AlertTriangle, CalendarClock, CheckCircle2, Users, FolderKanban, Bell } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Users, Bell, Sparkles, TrendingUp, Clock3 } from 'lucide-react';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const UPCOMING_DUE_WINDOW_DAYS = 5;
 
 function formatDate(dateStr) {
   if (!dateStr) return 'No due date';
@@ -42,8 +44,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState([]);
   const [assessmentsByGroup, setAssessmentsByGroup] = useState({});
 
-  useEffect(() => {
-    async function loadDashboard() {
+  const loadDashboard = async () => {
       try {
         setError(null);
 
@@ -57,9 +58,17 @@ export default function DashboardPage() {
         setGroups(groupList);
 
         const myTasksData = myTasksRes?.data || myTasksRes || {};
+        const groupedTasks = toArray(
+          myTasksRes?.grouped ?? myTasksData?.grouped ?? myTasksRes?.data ?? myTasksData,
+          []
+        );
+        const flatTasks = toArray(
+          myTasksRes?.tasks ?? myTasksData?.tasks,
+          groupedTasks.flatMap((section) => toArray(section?.tasks, []))
+        );
         setMyTasksPayload({
-          grouped: toArray(myTasksData.grouped, []),
-          tasks: toArray(myTasksData.tasks, []),
+          grouped: groupedTasks,
+          tasks: flatTasks,
         });
 
         const notificationList = notificationsRes?.data?.notifications || notificationsRes?.notifications || [];
@@ -96,9 +105,26 @@ export default function DashboardPage() {
       } finally {
         setLoading(false);
       }
-    }
+    };
 
+  useEffect(() => {
     loadDashboard();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeDataSync(() => {
+      loadDashboard();
+    });
+
+    const onFocus = () => {
+      loadDashboard();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const taskGroups = myTasksPayload.grouped;
@@ -111,7 +137,7 @@ export default function DashboardPage() {
       if (status === 'DONE') return false;
       if (!task.due_date) return false;
       const due = new Date(task.due_date).getTime();
-      return !Number.isNaN(due) && due >= now && due <= now + DAY_MS * 3;
+      return !Number.isNaN(due) && due >= now && due <= now + DAY_MS * UPCOMING_DUE_WINDOW_DAYS;
     }).length;
 
     const pendingResponsibilities = responsibilities.filter((row) => {
@@ -123,7 +149,12 @@ export default function DashboardPage() {
     const activeAssessments = Object.values(assessmentsByGroup).reduce((sum, list) => sum + list.length, 0);
 
     const upcomingDue = allTasks
-      .filter((task) => normalizeStatus(task.status) !== 'DONE' && task.due_date)
+      .filter((task) => {
+        if (normalizeStatus(task.status) === 'DONE' || !task.due_date) return false;
+        const due = new Date(task.due_date).getTime();
+        if (Number.isNaN(due)) return false;
+        return due >= now && due <= now + DAY_MS * UPCOMING_DUE_WINDOW_DAYS;
+      })
       .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
       .slice(0, 5);
 
@@ -166,6 +197,60 @@ export default function DashboardPage() {
     };
   }, [taskGroups]);
 
+  const assessmentInsights = useMemo(() => {
+    const groupsByAssessment = new Map();
+
+    for (const task of allTasks) {
+      const key = String(task.assessment_id || task.assessment_title || 'unassigned').trim();
+      if (!groupsByAssessment.has(key)) {
+        groupsByAssessment.set(key, {
+          id: key,
+          title: task.assessment_title || 'Unassigned Assessment',
+          dueDate: task.assessment_due_date || null,
+          totalTasks: 0,
+          doneTasks: 0,
+          inProgressTasks: 0,
+          todoTasks: 0,
+          totalHours: 0,
+          highPriority: 0,
+        });
+      }
+
+      const row = groupsByAssessment.get(key);
+      row.totalTasks += 1;
+      row.totalHours += Math.max(1, Number(task.effort_hours || task.estimated_hours || 1));
+
+      const status = normalizeStatus(task.status);
+      if (status === 'DONE') row.doneTasks += 1;
+      else if (status === 'IN_PROGRESS') row.inProgressTasks += 1;
+      else row.todoTasks += 1;
+
+      if (String(task.priority || '').toUpperCase() === 'HIGH') {
+        row.highPriority += 1;
+      }
+    }
+
+    return Array.from(groupsByAssessment.values())
+      .sort((a, b) => {
+        const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+        const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+        return aDue - bDue;
+      })
+      .slice(0, 4)
+      .map((item) => {
+        const completion = item.totalTasks > 0 ? Math.round((item.doneTasks / item.totalTasks) * 100) : 0;
+        const statusSummary = completion >= 70 ? 'on track' : item.inProgressTasks > 0 ? 'in progress' : 'at risk';
+        return {
+          ...item,
+          completion,
+          statusSummary,
+          recommendation: item.highPriority > 0
+            ? 'Start high-priority items first and keep daily check-ins.'
+            : 'Maintain steady progress and close open tasks early.',
+        };
+      });
+  }, [allTasks]);
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto mt-6">
@@ -189,48 +274,52 @@ export default function DashboardPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Card>
+        <Card className="sg-hover-lift">
           <CardContent className="pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Urgent Tasks</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Upcoming Deadlines</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.urgentTasks}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"><TrendingUp className="w-3 h-3" />Needs attention</p>
               </div>
               <AlertTriangle className="w-5 h-5 text-amber-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="sg-hover-lift">
           <CardContent className="pt-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Pending Responsibilities</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.pendingResponsibilities}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400"><Clock3 className="w-3 h-3" />Awaiting acceptance</p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-teal-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="sg-hover-lift">
           <CardContent className="pt-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Active Groups / Assessments</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.activeGroups} / {stats.activeAssessments}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400"><TrendingUp className="w-3 h-3" />Healthy collaboration</p>
               </div>
               <Users className="w-5 h-5 text-indigo-500" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="sg-hover-lift">
           <CardContent className="pt-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Unread Alerts</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.unreadAlerts}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400"><TrendingUp className="w-3 h-3" />Action required</p>
               </div>
               <Bell className="w-5 h-5 text-rose-500" />
             </div>
@@ -283,6 +372,30 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4 text-indigo-500" />AI Insights By Assessment</CardTitle>
+          <CardDescription>Realtime planning intelligence for each active assessment.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {assessmentInsights.length === 0 ? (
+            <div className="sg-glass p-4 text-sm text-slate-500 dark:text-slate-400">No assessment insights yet. Generate or assign tasks to see AI guidance.</div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {assessmentInsights.map((insight) => (
+                <div key={insight.id} className="sg-glass p-4 bg-gradient-to-r from-white/65 to-white/45 dark:from-slate-900/80 dark:to-slate-900/60">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{insight.title}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Due {formatDate(insight.dueDate)}</p>
+                  <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{insight.totalTasks} tasks • {insight.totalHours}h estimated • {insight.completion}% complete</p>
+                  <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">Status: <span className="font-semibold">{insight.statusSummary}</span></p>
+                  <p className="mt-2 text-sm font-medium text-teal-700 dark:text-teal-300">Recommendation: {insight.recommendation}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
