@@ -21,14 +21,25 @@ const STEPS = [
 
 const PROCESS_STEPS = [
   'Reading assessment brief',
-  'Extracting requirements',
-  'Identifying milestones',
-  'Generating tasks',
-  'Estimating workload',
-  'Preparing assignment plan',
+  'Understanding requirements',
+  'Identifying deliverables',
+  'Estimating effort',
+  'Balancing workload',
+  'Preparing project plan',
 ];
 
 const MAX_WORKLOAD_VARIANCE_HOURS = 2;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getPlanningWindowDays(baseDueDate) {
+  if (!baseDueDate) return null;
+  const due = new Date(baseDueDate);
+  if (Number.isNaN(due.getTime())) return null;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / DAY_MS));
+}
 
 function formatDate(dateString) {
   if (!dateString) return '';
@@ -39,9 +50,19 @@ function formatDate(dateString) {
 function calculateSuggestedDueDate(baseDueDate, index, totalTasks) {
   if (!baseDueDate) return '';
   const dueDate = new Date(baseDueDate);
-  const leadDays = Math.max(1, Math.ceil(((totalTasks - index) / totalTasks) * 7));
-  dueDate.setDate(dueDate.getDate() - leadDays);
-  return formatDate(dueDate.toISOString());
+  if (Number.isNaN(dueDate.getTime())) return '';
+
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  const windowDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / DAY_MS));
+  const safeTaskCount = Math.max(1, totalTasks || 1);
+  const fraction = (index + 1) / (safeTaskCount + 1);
+  const daysFromNow = Math.max(0, Math.min(windowDays - 1, Math.round(windowDays * fraction)));
+
+  const suggested = new Date(start);
+  suggested.setDate(start.getDate() + daysFromNow);
+  return formatDate(suggested.toISOString());
 }
 
 export default function AIPlannerPage() {
@@ -160,10 +181,20 @@ export default function AIPlannerPage() {
     const taskCount = generatedTasks.length;
     const totalHours = generatedTasks.reduce((sum, task) => sum + (task.estimated_hours || 1), 0);
     const riskLevel = generatedTasks.some((task) => task.priority === 'HIGH') ? 'Elevated' : 'Balanced';
+    const availableDays = getPlanningWindowDays(assessmentDueDate);
+    const availableWeeks = availableDays === null ? null : Math.max(availableDays / 7, 0.2);
+    const requiredHoursPerWeek = availableWeeks ? Math.round((totalHours / availableWeeks) * 10) / 10 : null;
     const milestones = generatedTasks.slice(0, 3).map((task) => task.title || 'Milestone');
     const recommendations = [];
     if (riskLevel === 'Elevated') {
       recommendations.push('Focus first on high-priority tasks to reduce risk.');
+    }
+    if (availableDays !== null) {
+      if (availableDays === 0) {
+        recommendations.push('Deadline is due now or overdue. Prioritise immediate deliverables first.');
+      } else {
+        recommendations.push(`You have ${availableDays} day${availableDays === 1 ? '' : 's'} left until the due date.`);
+      }
     }
     if (generatedTasks.some((task) => !task.assigned_to_email)) {
       recommendations.push('Assign every task to keep accountability on track.');
@@ -175,10 +206,12 @@ export default function AIPlannerPage() {
       taskCount,
       totalHours,
       riskLevel,
+      availableDays,
+      requiredHoursPerWeek,
       milestones,
       recommendations,
     };
-  }, [generatedTasks]);
+  }, [generatedTasks, assessmentDueDate]);
 
   const handleFileUpload = (file) => {
     if (!file) return;
@@ -240,6 +273,8 @@ export default function AIPlannerPage() {
         groupId: selectedGroupId,
         assignmentText: inputMode === 'text' ? promptText : '',
         assignmentFile: inputMode === 'upload' ? uploadedFile : null,
+        assessmentTitle,
+        assessmentDueDate,
       });
       const rawTasks = data?.data?.tasks || [];
       const plannedMemberCount = Math.max(Number(data?.data?.memberCount || members.length || 1), 1);
@@ -257,7 +292,7 @@ export default function AIPlannerPage() {
 
       setGeneratedTasks(normalized);
       setStep(5);
-  setAssistantNote(`AI plan ready for ${plannedMemberCount} team member${plannedMemberCount === 1 ? '' : 's'}. Review the summary and make sure the workload looks balanced before assignment.`);
+        setAssistantNote(`AI plan ready for ${plannedMemberCount} team member${plannedMemberCount === 1 ? '' : 's'}. Review the timeline and ensure tasks fit the due date before assignment.`);
     } catch (err) {
       const usage = err?.response?.data?.data?.usage || null;
       setQuotaInfo(usage);
@@ -400,27 +435,54 @@ export default function AIPlannerPage() {
             <Badge variant="blue">Step {step} / {STEPS.length}</Badge>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
-            {STEPS.map((label, idx) => {
-              const stepIndex = idx + 1;
-              const active = stepIndex <= step;
-              return (
-                <div
-                  key={label}
-                  className={`rounded-2xl px-3 py-2 text-xs font-medium border ${
-                    active
-                      ? 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/20 dark:text-teal-300 dark:border-teal-800'
-                      : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700'
-                  }`}
-                >
-                  {stepIndex}. {label}
+          <div className="rounded-[24px] bg-gradient-to-r from-teal-500 to-indigo-500 text-white p-5 shadow-[0_12px_35px_rgba(99,102,241,0.35)]">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-white/85">SmartGroup AI</p>
+                <p className="mt-1 text-lg font-semibold">Ready to help your team plan, organise and deliver assignments.</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                <div className="rounded-xl bg-white/15 px-3 py-2">
+                  <p className="text-white/70">Members</p>
+                  <p className="text-base font-semibold text-white">{Math.max(members.length, 0)}</p>
                 </div>
-              );
-            })}
+                <div className="rounded-xl bg-white/15 px-3 py-2">
+                  <p className="text-white/70">Tasks Generated</p>
+                  <p className="text-base font-semibold text-white">{generatedTasks.length}</p>
+                </div>
+                <div className="rounded-xl bg-white/15 px-3 py-2">
+                  <p className="text-white/70">Deadline</p>
+                  <p className="text-base font-semibold text-white">{assessmentDueDate ? formatDate(assessmentDueDate) : 'TBD'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200/80 dark:border-slate-800 p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+              {STEPS.map((label, idx) => {
+                const stepIndex = idx + 1;
+                const complete = stepIndex < step;
+                const current = stepIndex === step;
+                return (
+                  <div key={label} className="relative">
+                    {idx < STEPS.length - 1 && (
+                      <span className={`absolute left-[52%] right-[-56%] top-3 h-[2px] ${complete ? 'bg-gradient-to-r from-teal-500 to-indigo-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                    )}
+                    <div className="relative z-[1] flex items-center gap-2">
+                      <span className={`grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold ${complete || current ? 'bg-gradient-to-r from-teal-500 to-indigo-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}>
+                        {stepIndex}
+                      </span>
+                      <p className={`text-xs font-medium ${current ? 'text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>{label}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-teal-500 to-indigo-500 transition-all duration-500" style={{ width: `${completionPct}%` }} />
+            <div className="h-full sg-progress-shimmer transition-all duration-500" style={{ width: `${completionPct}%` }} />
           </div>
         </CardContent>
       </Card>
@@ -625,6 +687,12 @@ export default function AIPlannerPage() {
 
           <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
             <p className="text-sm font-medium text-slate-700 dark:text-slate-300">AI processing experience</p>
+            <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+              <div
+                className={`h-full ${loading ? 'sg-progress-shimmer' : 'bg-gradient-to-r from-teal-500 to-indigo-500'} transition-all duration-500`}
+                style={{ width: `${Math.min(100, Math.max(8, (processingIndex / PROCESS_STEPS.length) * 100))}%` }}
+              />
+            </div>
             <div className="mt-4 space-y-3">
               {PROCESS_STEPS.map((label, index) => {
                 const completed = loading ? index < processingIndex : step > 4;
@@ -634,7 +702,9 @@ export default function AIPlannerPage() {
                     <span className={`grid h-8 w-8 place-items-center rounded-full border ${
                       completed
                         ? 'border-teal-500 bg-teal-500 text-white'
-                        : 'border-slate-300 text-slate-400 dark:border-slate-700'
+                        : active
+                          ? 'border-indigo-500 text-indigo-500 dark:border-indigo-400 dark:text-indigo-300 animate-pulse'
+                          : 'border-slate-300 text-slate-400 dark:border-slate-700'
                     }`}>
                       {completed ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
                     </span>
@@ -666,8 +736,13 @@ export default function AIPlannerPage() {
                 {assessmentDueDate && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Deadline: {formatDate(assessmentDueDate)}</p>}
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Estimated duration</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{Math.max(1, Math.ceil(planSummary.totalHours / 8))} weeks</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Time to deadline</p>
+                <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                  {planSummary.availableDays === null ? 'Set due date' : `${planSummary.availableDays} day${planSummary.availableDays === 1 ? '' : 's'}`}
+                </p>
+                {planSummary.requiredHoursPerWeek !== null && (
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Required pace: {planSummary.requiredHoursPerWeek}h/week</p>
+                )}
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tasks generated</p>
@@ -806,7 +881,7 @@ export default function AIPlannerPage() {
           </CardContent>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-[1] bg-white/90 dark:bg-slate-950/95 backdrop-blur-sm">
                 <tr className="border-b border-slate-100 dark:border-slate-800 text-left">
                   <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 w-1/4">Task</th>
                   <th className="px-4 py-3 font-medium text-slate-500 dark:text-slate-400 hidden lg:table-cell">Priority</th>

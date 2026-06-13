@@ -13,6 +13,7 @@ import {
 } from '@/services/groupService';
 import { getTasks } from '@/services/taskService';
 import { markNotificationsReadByContext } from '@/services/notificationService';
+import { subscribeDataSync } from '@/lib/dataSync';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -20,7 +21,7 @@ import LoadingState from '@/components/ui/LoadingState';
 import Progress from '@/components/ui/Progress';
 import CreateGroupButton from '@/components/workspace/CreateGroupButton';
 import CreateGroupModal from '@/components/workspace/CreateGroupModal';
-import { Activity, MessageCircle, Users } from 'lucide-react';
+import { Activity, MessageCircle, SendHorizontal, Users } from 'lucide-react';
 
 const TABS = ['OVERVIEW', 'MEMBERS', 'ASSESSMENTS', 'GROUP_CHAT'];
 
@@ -187,6 +188,31 @@ export default function GroupWorkspacePage() {
   }, [selectedGroupId, fetchMembers, fetchAssessments, fetchTasks, fetchMessages]);
 
   useEffect(() => {
+    if (!selectedGroupId) return undefined;
+
+    const refreshCurrentGroup = () => {
+      fetchMembers(selectedGroupId);
+      fetchAssessments(selectedGroupId);
+      fetchTasks(selectedGroupId);
+      fetchMessages(selectedGroupId);
+    };
+
+    const unsubscribe = subscribeDataSync(() => {
+      refreshCurrentGroup();
+    });
+
+    const onFocus = () => {
+      refreshCurrentGroup();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [selectedGroupId, fetchMembers, fetchAssessments, fetchTasks, fetchMessages]);
+
+  useEffect(() => {
     if (!selectedGroupId || activeTab !== 'GROUP_CHAT') return;
 
     // Opening Group Chat counts as reviewing mention alerts from this group.
@@ -326,6 +352,15 @@ export default function GroupWorkspacePage() {
       setMessageError('Unable to send message.');
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const handleChatComposerKeyDown = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!sendingMessage && messageDraft.trim()) {
+        handleSendMessage();
+      }
     }
   };
 
@@ -479,16 +514,44 @@ export default function GroupWorkspacePage() {
                   <CardHeader><CardTitle>Group Chat</CardTitle><CardDescription>Use @mentions to notify teammates.</CardDescription></CardHeader>
                   <CardContent className="space-y-4">
                     {loadingMessages ? <LoadingState message="Loading messages..." /> : (
-                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">{groupMessages.map((message) => (
-                        <div key={message.message_id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
-                          <div className="flex items-center justify-between mb-1"><p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{message.full_name || message.email}</p><span className="text-[11px] text-slate-500 dark:text-slate-400">{formatDateTime(message.created_at)}</span></div>
-                          <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{message.message}</p>
+                      <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 p-3">
+                        <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                          {groupMessages.map((message) => {
+                            const isMine = message.user_id && user?.user_id && message.user_id === user.user_id;
+                            const displayName = message.full_name || message.email || 'Team member';
+                            const messageBody = String(message.message_text || message.message || '').trim();
+                            const initials = displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+
+                            return (
+                              <div key={message.message_id} className={`flex gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                                {!isMine && (
+                                  <div className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-teal-500 to-indigo-500 text-white text-[11px] font-semibold grid place-items-center mt-1">
+                                    {initials || 'U'}
+                                  </div>
+                                )}
+
+                                <div className={`max-w-[80%] rounded-2xl px-3 py-2 ${isMine ? 'bg-gradient-to-r from-teal-500 to-indigo-500 text-white' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'}`}>
+                                  <div className={`mb-1 flex items-center justify-between gap-3 text-[11px] ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                                    <span className="font-semibold">{displayName}</span>
+                                    <span>{formatDateTime(message.created_at)}</span>
+                                  </div>
+                                  <p className="text-sm whitespace-pre-wrap break-words">{messageBody || ' '}</p>
+                                </div>
+
+                                {isMine && (
+                                  <div className="h-8 w-8 shrink-0 rounded-full bg-slate-900 text-white text-[11px] font-semibold grid place-items-center mt-1 dark:bg-slate-700">
+                                    {initials || 'Y'}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}</div>
+                      </div>
                     )}
                     {messageError && <div className="px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">{messageError}</div>}
-                    <div className="relative">
-                      <textarea rows={3} value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} placeholder="Write a message... Use @ to mention teammates" className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm" />
+                    <div className="relative rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5">
+                      <textarea rows={2} value={messageDraft} onKeyDown={handleChatComposerKeyDown} onChange={(e) => setMessageDraft(e.target.value)} placeholder="Write a message... Use @ to mention teammates" className="w-full px-2 py-2 rounded-xl border-0 bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-0 text-sm resize-none" />
                       {mentionSuggestions.length > 0 && (
                         <div className="absolute left-0 right-0 z-10 mt-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
                           {mentionSuggestions.map((member) => (
@@ -497,7 +560,7 @@ export default function GroupWorkspacePage() {
                         </div>
                       )}
                     </div>
-                    <div className="flex justify-end"><Button onClick={handleSendMessage} disabled={sendingMessage || !messageDraft.trim()}>{sendingMessage ? 'Sending...' : 'Send'}</Button></div>
+                    <div className="flex justify-end"><Button onClick={handleSendMessage} disabled={sendingMessage || !messageDraft.trim()} className="min-w-[120px]">{sendingMessage ? 'Sending...' : (<><SendHorizontal className="h-4 w-4" />Send</>)}</Button></div>
                   </CardContent>
                 </Card>
               )}

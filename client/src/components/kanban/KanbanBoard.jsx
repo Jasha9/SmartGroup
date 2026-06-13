@@ -19,9 +19,10 @@ export default function KanbanBoard({ tasks = [], isLoading = false, onTaskMove 
 
   if (tasks.length === 0) {
     return (
-      <p className="text-sm text-center text-slate-400 dark:text-slate-500 py-10">
-        No accepted tasks yet. Accept assigned responsibilities to begin.
-      </p>
+      <div className="text-center py-10 space-y-1">
+        <p className="text-base font-semibold text-slate-700 dark:text-slate-200">Nothing here yet.</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500">Tasks will appear once responsibilities are accepted.</p>
+      </div>
     );
   }
 

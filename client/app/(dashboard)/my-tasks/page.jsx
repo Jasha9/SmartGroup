@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getGroupMembers } from '@/services/groupService';
 import { markNotificationsReadByContext } from '@/services/notificationService';
+import { subscribeDataSync } from '@/lib/dataSync';
 import {
   acceptTask,
   addTaskComment,
@@ -288,6 +289,22 @@ export default function MyTasksPage() {
 
   useEffect(() => {
     loadMyTasks();
+  }, [loadMyTasks]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeDataSync(() => {
+      loadMyTasks();
+    });
+
+    const onFocus = () => {
+      loadMyTasks();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
   }, [loadMyTasks]);
 
   const sortedSections = useMemo(() => {

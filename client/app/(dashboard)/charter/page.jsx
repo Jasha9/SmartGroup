@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import LoadingState from '@/components/ui/LoadingState';
+import { subscribeDataSync } from '@/lib/dataSync';
 
 function formatDate(dateStr) {
   if (!dateStr) return 'No due date';
@@ -73,6 +74,22 @@ export default function ResponsibilitiesPage() {
 
   useEffect(() => {
     loadResponsibilities();
+  }, [loadResponsibilities]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeDataSync(() => {
+      loadResponsibilities();
+    });
+
+    const onFocus = () => {
+      loadResponsibilities();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
   }, [loadResponsibilities]);
 
   const grouped = useMemo(() => {

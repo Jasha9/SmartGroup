@@ -9,6 +9,7 @@ import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
 import Badge from '@/components/ui/Badge';
 import { Zap, CheckCircle2, ArrowLeftRight, ShieldAlert } from 'lucide-react';
+import { subscribeDataSync } from '@/lib/dataSync';
 
 function getCardMeta(notification) {
   const type = String(notification.type || '').toUpperCase();
@@ -74,6 +75,22 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeDataSync(() => {
+      fetchNotifications();
+    });
+
+    const onFocus = () => {
+      fetchNotifications();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const handleMarkRead = async (id) => {
