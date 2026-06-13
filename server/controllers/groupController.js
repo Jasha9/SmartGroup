@@ -93,9 +93,15 @@ async function getGroups(req, res) {
     const userId = req.user.user_id;
     const result = await pool.query(
       `SELECT g.group_id, g.group_name, g.description, g.status, g.created_at,
-              m.role AS member_role
+              m.role AS member_role,
+              COALESCE(mc.member_count, 0)::INT AS member_count
        FROM groups g
        JOIN memberships m ON g.group_id = m.group_id
+       LEFT JOIN (
+         SELECT group_id, COUNT(*)::INT AS member_count
+         FROM memberships
+         GROUP BY group_id
+       ) mc ON mc.group_id = g.group_id
        WHERE m.user_id = $1
        ORDER BY g.created_at DESC`,
       [userId]

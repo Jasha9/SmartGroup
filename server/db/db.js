@@ -36,6 +36,25 @@ pool.query(`
 });
 
 pool.query(`
+  CREATE TABLE IF NOT EXISTS task_plans (
+    plan_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID REFERENCES groups(group_id) ON DELETE CASCADE,
+    task_json JSONB,
+    generation_count INT DEFAULT 0,
+    last_gen_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`).catch((err) => {
+  console.error('[db:init] Failed to ensure task_plans table:', err.message);
+});
+
+pool.query(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_task_plans_group_unique ON task_plans(group_id)
+`).catch((err) => {
+  console.error('[db:init] Failed to ensure unique task_plans group index:', err.message);
+});
+
+pool.query(`
   ALTER TABLE tasks
   ADD COLUMN IF NOT EXISTS assessment_id UUID REFERENCES assessments(assessment_id) ON DELETE SET NULL
 `).catch((err) => {

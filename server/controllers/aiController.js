@@ -1,87 +1,20 @@
 const OpenAI = require("openai");
+const { PDFParse } = require("pdf-parse");
+const pool = require('../db/db');
 
-const SYSTEM_PROMPT = `You are SmartGroup's AI planning engine for university group assessments.
-Follow this workflow exactly when given an assessment brief and team context:
-1) Assessment Analysis
-2) Deliverable Detection
-3) Marking Criteria Analysis
-4) Section Extraction
-5) Workload Estimation
-6) Team Size Analysis
-7) Balanced Task Generation
-8) Task Dependencies
-9) Task Categorization
-10) Optional Task Assignment Suggestions
-11) Milestone Generation
-12) Fairness Score Calculation
+const DAILY_GENERATION_LIMIT = 3;
+const QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-Respond ONLY with a valid JSON object and nothing else. No markdown, no explanation, no code fences.
-
-The output must look like this:
-{
-  "assessmentAnalysis": {
-    "assessmentTitle": "",
-    "assessmentType": "",
-    "deliverables": [],
-    "dueDate": "",
-    "presentationDate": "",
-    "wordCount": 0,
-    "sections": [],
-    "markingCriteria": [{ "section": "", "weight": 0 }],
-    "topics": []
-  },
-  "deliverables": [],
-  "milestones": [{ "title": "", "dueDate": "", "description": "" }],
-  "fairnessScore": 0,
-  "workloadSummary": {
-    "totalEffortHours": 0,
-    "targetHoursPerMember": 0,
-    "teamSize": 0,
-    "tasksByPriority": { "HIGH": 0, "MEDIUM": 0, "LOW": 0 }
-  },
-  "tasks": [
-    {
-      "title": "",
-      "description": "",
-      "category": "Research",
-      "priority": "MEDIUM",
-      "effortHours": 0,
-      "dueDate": "",
-      "suggestedOwner": "",
-      "assignmentReason": "",
-      "dependsOn": [],
-      "assessmentSection": ""
-    }
-  ]
-}
-
-Use the assessment brief to detect deliverables, marking criteria, section names, and assessment type.
-Use the team size to determine task count:
-  2 members => 6-8 tasks
-  3 members => 9-12 tasks
-  4 members => 12-16 tasks
-  5 members => 15-20 tasks
-If the brief references more than 5 members, still generate a balanced plan similar to the 5-member range.
-Use marking weights to assign more effort, higher priority, and more tasks to heavier sections.
-Generate tasks that map to real assessment sections and deliverables, not generic placeholders.
-Use dependencies logically for task flow.
-If member skills are provided, include suggestedOwner and assignmentReason. If not, leave those fields as empty strings.
-Always return a fairnessScore between 0 and 100.
-
-When the brief is for a marketing or campaign-style project, structure tasks around the following workstreams:
-  - Strategy & Persona Development
-  - Omni-Channel & Creative Execution
-  - Analytics, Budgeting & Integration
-Include outputs such as digital footprint audits, SWOT matrices, buyer personas, paid/earned/owned media frameworks, conversion messaging hooks, six-month activation timelines, budget allocation sheets, KPI frameworks, group charters, and PDF compilation.
-Create tasks with specific titles and useful detail, for example:
-  - Conduct competitor digital footprint audit and document website, social, SEO, and PR positioning.
-  - Develop two buyer personas with digital micro-moments, pain points, and device habits.
-  - Map a paid/earned/owned media acquisition journey and recommend target platforms.
-  - Draft conversion messaging hooks and format for a 6-month campaign timeline.
-  - Build a $150,000 AUD budget architecture with CPA, ROAS, and CTR assumptions.
-  - Compile the final group charter and prepare the submission PDF.
-Avoid generic task names like 'Review assignment guidelines', 'Research topic', or 'Draft sections'.
-`; 
+const SYSTEM_PROMPT = `You are a project planning assistant for university group assignments.
+Given an assignment description, generate a practical task breakdown for a student team.
+Respond ONLY with a valid JSON array of tasks — no markdown, no explanation, no code fences.
+Each task must have exactly these fields:
+  title (string),
+  description (string),
+  priority ("HIGH" | "MEDIUM" | "LOW"),
+  estimated_hours (number, 1–8),
+  status ("TO_DO").
+Generate a balanced set of concrete tasks that can be distributed fairly across the team.`;
 
 function getOpenAIClient() {
   if (!process.env.OPENAI_API_KEY) {
@@ -90,47 +23,259 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-async function generateTasks(req, res) {
-  const { assignmentText, groupSize, assessmentTitle, assessmentDueDate } = req.body;
+function buildUsagePayload(planRow, now = new Date()) {
+  const lastGeneratedAt = planRow?.last_gen_at ? new Date(planRow.last_gen_at) : null;
+  const generationCount = Number(planRow?.generation_count || 0);
+  const lastGeneratedAtMs = lastGeneratedAt?.getTime() || null;
+  const windowActive = lastGeneratedAtMs ? now.getTime() - lastGeneratedAtMs < QUOTA_WINDOW_MS : false;
+  const remaining = windowActive ? Math.max(0, DAILY_GENERATION_LIMIT - generationCount) : DAILY_GENERATION_LIMIT;
+  const resetAt = lastGeneratedAtMs ? new Date(lastGeneratedAtMs + QUOTA_WINDOW_MS) : null;
 
-  if (!assignmentText || !assignmentText.trim()) {
-    return res.status(400).json({ success: false, error: "assignmentText is required." });
+  return {
+    generationCount: windowActive ? generationCount : 0,
+    limit: DAILY_GENERATION_LIMIT,
+    remaining,
+    resetAt: resetAt?.toISOString() || null,
+    windowActive,
+  };
+}
+
+async function assertGroupAccess(groupId, userId) {
+  const accessCheck = await pool.query(
+    `SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2`,
+    [groupId, userId]
+  );
+
+  return accessCheck.rowCount > 0;
+}
+
+async function getGroupMemberCount(groupId) {
+  const result = await pool.query(
+    `SELECT COUNT(*)::INT AS member_count
+     FROM memberships
+     WHERE group_id = $1`,
+    [groupId]
+  );
+
+  return result.rows[0]?.member_count || 0;
+}
+
+function buildAssignmentPrompt(assignmentText, memberCount) {
+  const normalizedMemberCount = Math.max(1, Number(memberCount) || 1);
+  const minimumTasks = normalizedMemberCount;
+  const targetTasks = Math.min(Math.max(normalizedMemberCount, 4), 8);
+
+  return [
+    `Team size: ${normalizedMemberCount} members.`,
+    `Generate at least ${minimumTasks} tasks and aim for around ${targetTasks} tasks so the work can be distributed fairly.`,
+    'Split large work into smaller concrete tasks when needed so no one member gets a much heavier workload than the others.',
+    'Keep the estimated_hours balanced across the overall plan so each member can receive a similar total workload.',
+    'Avoid a plan where one task carries most of the effort unless the assignment requirements force it.',
+    '',
+    'Assignment brief:',
+    assignmentText,
+  ].join('\n');
+}
+
+async function getOrCreateTaskPlan(client, groupId) {
+  const inserted = await client.query(
+    `INSERT INTO task_plans (group_id, generation_count, last_gen_at)
+     VALUES ($1, 0, NULL)
+     ON CONFLICT (group_id) DO UPDATE SET group_id = EXCLUDED.group_id
+     RETURNING plan_id, group_id, generation_count, last_gen_at`,
+    [groupId]
+  );
+
+  return inserted.rows[0];
+}
+
+async function reserveGenerationSlot(client, groupId) {
+  const now = new Date();
+  const planRow = await getOrCreateTaskPlan(client, groupId);
+  const currentUsage = buildUsagePayload(planRow, now);
+
+  if (currentUsage.windowActive && currentUsage.generationCount >= DAILY_GENERATION_LIMIT) {
+    const error = new Error('Daily AI generation quota reached for this group. Please wait until the quota resets.');
+    error.statusCode = 429;
+    error.usage = currentUsage;
+    throw error;
+  }
+
+  const nextCount = currentUsage.windowActive ? currentUsage.generationCount + 1 : 1;
+  const updated = await client.query(
+    `UPDATE task_plans
+     SET generation_count = $1,
+         last_gen_at = $2
+     WHERE group_id = $3
+     RETURNING plan_id, group_id, generation_count, last_gen_at`,
+    [nextCount, now.toISOString(), groupId]
+  );
+
+  return buildUsagePayload(updated.rows[0], now);
+}
+
+async function releaseGenerationSlot(client, groupId) {
+  const planRow = await getOrCreateTaskPlan(client, groupId);
+  const now = new Date();
+  const currentUsage = buildUsagePayload(planRow, now);
+  const nextCount = Math.max(0, currentUsage.generationCount - 1);
+  const nextLastGeneratedAt = nextCount === 0 ? null : planRow.last_gen_at;
+
+  const updated = await client.query(
+    `UPDATE task_plans
+     SET generation_count = $1,
+         last_gen_at = $2
+     WHERE group_id = $3
+     RETURNING plan_id, group_id, generation_count, last_gen_at`,
+    [nextCount, nextLastGeneratedAt, groupId]
+  );
+
+  return buildUsagePayload(updated.rows[0], now);
+}
+
+function isPdfFile(file) {
+  if (!file) return false;
+
+  const mimeType = String(file.mimetype || '').toLowerCase();
+  const fileName = String(file.originalname || '').toLowerCase();
+
+  return mimeType === 'application/pdf' || fileName.endsWith('.pdf');
+}
+
+async function resolveAssignmentText(req) {
+  const rawAssignmentText = String(req.body?.assignmentText || '').trim();
+
+  if (req.file) {
+    if (!isPdfFile(req.file)) {
+      const error = new Error('Invalid PDF format. Please ensure the file is in .pdf format.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    try {
+      const parser = new PDFParse({ data: req.file.buffer });
+      const parsed = await parser.getText();
+      await parser.destroy();
+
+      const extractedText = String(parsed?.text || '').trim();
+
+      if (!extractedText) {
+        const error = new Error('The uploaded PDF does not contain readable text. Please upload a text-based PDF or paste the assignment brief.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      return extractedText;
+    } catch (err) {
+      if (err.statusCode) {
+        throw err;
+      }
+
+      console.error('[AI] PDF parsing failed:', err.message);
+
+      const error = new Error('Invalid PDF format. Please ensure the file is not corrupted and is in .pdf format.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (!rawAssignmentText) {
+    const error = new Error('assignmentText is required when no PDF is uploaded.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return rawAssignmentText;
+}
+
+async function generateTasks(req, res) {
+  const groupId = String(req.body?.groupId || '').trim();
+
+  if (!groupId) {
+    return res.status(400).json({ success: false, error: 'groupId is required.' });
+  }
+
+  try {
+    const hasAccess = await assertGroupAccess(groupId, req.user.user_id);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Access denied to this group.' });
+    }
+  } catch (err) {
+    console.error('[AI] Failed to validate group access:', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to validate group access.' });
+  }
+
+  let assignmentText;
+  try {
+    assignmentText = await resolveAssignmentText(req);
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, error: err.message || 'Invalid assignment input.' });
+  }
+
+  let memberCount;
+  try {
+    memberCount = await getGroupMemberCount(groupId);
+  } catch (err) {
+    console.error('[AI] Failed to resolve group member count:', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load group member count.' });
   }
 
   if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({ success: false, error: "OPENAI_API_KEY is not configured on the server." });
   }
 
-  const userPrompt = [`Assignment Brief:
-${assignmentText.trim()}`];
-  if (typeof groupSize === 'number') {
-    userPrompt.push(`Team size: ${groupSize} member${groupSize === 1 ? '' : 's'}`);
+  const client = await pool.connect();
+  let usage;
+  try {
+    await client.query('BEGIN');
+    usage = await reserveGenerationSlot(client, groupId);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    client.release();
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      error: err.message || 'Failed to reserve AI generation quota.',
+      data: err.usage ? { usage: err.usage } : undefined,
+    });
   }
-  if (assessmentTitle) {
-    userPrompt.push(`Assessment title: ${assessmentTitle}`);
-  }
-  if (assessmentDueDate) {
-    userPrompt.push(`Assessment due date: ${assessmentDueDate}`);
-  }
+  client.release();
 
   let completion;
   try {
     const openai = getOpenAIClient();
+    const planningPrompt = buildAssignmentPrompt(assignmentText, memberCount);
     completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt.join('\n\n') },
+        { role: "user", content: planningPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 1400,
+      max_tokens: 1200,
     });
   } catch (err) {
+    const rollbackClient = await pool.connect();
+    try {
+      await rollbackClient.query('BEGIN');
+      usage = await releaseGenerationSlot(rollbackClient, groupId);
+      await rollbackClient.query('COMMIT');
+    } catch (rollbackErr) {
+      await rollbackClient.query('ROLLBACK');
+      console.error('[AI] Failed to release quota after API error:', rollbackErr.message);
+    } finally {
+      rollbackClient.release();
+    }
+
     console.error("[OpenAI] API error:", err.message);
-    return res.status(502).json({ success: false, error: "AI service unavailable. Check your OPENAI_API_KEY and account credits." });
+    return res.status(502).json({
+      success: false,
+      error: "AI service unavailable. Check your OPENAI_API_KEY and account credits.",
+      data: { usage },
+    });
   }
 
-  let plan;
+  let tasks;
   try {
     const raw = completion.choices[0].message.content.trim();
     const cleaned = raw
@@ -138,18 +283,32 @@ ${assignmentText.trim()}`];
       .replace(/^```\s*/i, "")
       .replace(/```$/i, "")
       .trim();
-    plan = JSON.parse(cleaned);
-    if (!plan || typeof plan !== 'object' || !Array.isArray(plan.tasks)) {
-      throw new Error("Response is not a valid SmartGroup plan object.");
-    }
+    tasks = JSON.parse(cleaned);
+    if (!Array.isArray(tasks)) throw new Error("Response is not an array");
   } catch (err) {
+    const rollbackClient = await pool.connect();
+    try {
+      await rollbackClient.query('BEGIN');
+      usage = await releaseGenerationSlot(rollbackClient, groupId);
+      await rollbackClient.query('COMMIT');
+    } catch (rollbackErr) {
+      await rollbackClient.query('ROLLBACK');
+      console.error('[AI] Failed to release quota after parse error:', rollbackErr.message);
+    } finally {
+      rollbackClient.release();
+    }
+
     console.error("[OpenAI] Failed to parse response:", completion.choices[0].message.content);
-    return res.status(500).json({ success: false, error: "AI returned an unexpected format. Please try again." });
+    return res.status(500).json({
+      success: false,
+      error: "AI returned an unexpected format. Please try again.",
+      data: { usage },
+    });
   }
 
   return res.json({
     success: true,
-    data: plan,
+    data: { tasks, usage, memberCount },
   });
 }
 

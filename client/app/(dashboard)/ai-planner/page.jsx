@@ -28,6 +28,8 @@ const PROCESS_STEPS = [
   'Preparing assignment plan',
 ];
 
+const MAX_WORKLOAD_VARIANCE_HOURS = 2;
+
 function formatDate(dateString) {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -60,13 +62,13 @@ export default function AIPlannerPage() {
   const [membersLoading, setMembersLoading] = useState(false);
 
   const [generatedTasks, setGeneratedTasks] = useState([]);
-  const [planOutput, setPlanOutput] = useState(null);
   const [loading, setLoading] = useState(false);
   const [processingIndex, setProcessingIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [assistantNote, setAssistantNote] = useState('Start by selecting a team to plan with.');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [quotaInfo, setQuotaInfo] = useState(null);
 
   useEffect(() => {
     const fetchGroups = async () => {
@@ -112,17 +114,54 @@ export default function AIPlannerPage() {
   const canGenerate = selectedGroupId && assessmentTitle.trim().length > 0 && (inputMode === 'upload' ? !!uploadedFile : promptText.trim().length > 0);
   const canPublish = generatedTasks.length > 0 && generatedTasks.every((task) => task.assigned_to_email);
 
+  const workloadSummary = useMemo(() => {
+    if (!members.length) return null;
+
+    const totals = new Map(
+      members.map((member) => [String(member.email || '').trim().toLowerCase(), {
+        email: String(member.email || '').trim().toLowerCase(),
+        name: member.full_name || member.email,
+        totalHours: 0,
+        taskCount: 0,
+      }])
+    );
+
+    for (const task of generatedTasks) {
+      const email = String(task.assigned_to_email || '').trim().toLowerCase();
+      if (!email || !totals.has(email)) continue;
+      const hours = Math.max(1, Math.min(8, Number(task.estimated_hours) || 1));
+      const row = totals.get(email);
+      row.totalHours += hours;
+      row.taskCount += 1;
+    }
+
+    const rows = Array.from(totals.values());
+    const hourValues = rows.map((row) => row.totalHours);
+    const maxHours = hourValues.length ? Math.max(...hourValues) : 0;
+    const minHours = hourValues.length ? Math.min(...hourValues) : 0;
+    const varianceHours = maxHours - minHours;
+
+    return {
+      rows,
+      maxHours,
+      minHours,
+      varianceHours,
+      limitHours: MAX_WORKLOAD_VARIANCE_HOURS,
+      isBalanced: varianceHours <= MAX_WORKLOAD_VARIANCE_HOURS,
+    };
+  }, [generatedTasks, members]);
+
+  const canPublishBalanced = Boolean(canPublish && workloadSummary?.isBalanced);
+
   const completionPct = useMemo(() => Math.round((step / STEPS.length) * 100), [step]);
 
   const planSummary = useMemo(() => {
-    if (!planOutput || generatedTasks.length === 0) return null;
-
+    if (generatedTasks.length === 0) return null;
     const taskCount = generatedTasks.length;
     const totalHours = generatedTasks.reduce((sum, task) => sum + (task.estimated_hours || 1), 0);
-    const riskLevel = planOutput.fairnessScore !== undefined ? (planOutput.fairnessScore < 85 ? 'Elevated' : 'Balanced') : generatedTasks.some((task) => task.priority === 'HIGH') ? 'Elevated' : 'Balanced';
-    const milestones = planOutput.milestones?.length > 0 ? planOutput.milestones.map((milestone) => milestone.title) : generatedTasks.slice(0, 3).map((task) => task.title || 'Milestone');
+    const riskLevel = generatedTasks.some((task) => task.priority === 'HIGH') ? 'Elevated' : 'Balanced';
+    const milestones = generatedTasks.slice(0, 3).map((task) => task.title || 'Milestone');
     const recommendations = [];
-
     if (riskLevel === 'Elevated') {
       recommendations.push('Focus first on high-priority tasks to reduce risk.');
     }
@@ -138,12 +177,8 @@ export default function AIPlannerPage() {
       riskLevel,
       milestones,
       recommendations,
-      fairnessScore: planOutput.fairnessScore,
-      deliverables: planOutput.deliverables || [],
-      teamSize: planOutput.workloadSummary?.teamSize || members.length,
-      targetHoursPerMember: planOutput.workloadSummary?.targetHoursPerMember || Math.round((totalHours / Math.max(1, members.length)) * 10) / 10,
     };
-  }, [generatedTasks, planOutput, members.length]);
+  }, [generatedTasks]);
 
   const handleFileUpload = (file) => {
     if (!file) return;
@@ -192,9 +227,8 @@ export default function AIPlannerPage() {
     setLoading(true);
     setError('');
     setSaveSuccess(false);
-    setPlanOutput(null);
     setStep(4);
-    setAssistantNote('Generating your AI plan. This may take a moment.');
+    setAssistantNote(`Generating a balanced AI plan for ${Math.max(members.length, 1)} team member${Math.max(members.length, 1) === 1 ? '' : 's'}. This may take a moment.`);
     setProcessingIndex(0);
 
     const interval = setInterval(() => {
@@ -202,36 +236,31 @@ export default function AIPlannerPage() {
     }, 550);
 
     try {
-      const assignmentText = inputMode === 'upload' ? `Assessment document: ${uploadedFile?.name}` : promptText;
       const data = await generateTasks({
-        assignmentText,
-        groupSize: members.length,
-        assessmentTitle: assessmentTitle.trim(),
-        assessmentDueDate,
+        groupId: selectedGroupId,
+        assignmentText: inputMode === 'text' ? promptText : '',
+        assignmentFile: inputMode === 'upload' ? uploadedFile : null,
       });
-      const plan = data?.data || {};
-      const rawTasks = plan.tasks || [];
+      const rawTasks = data?.data?.tasks || [];
+      const plannedMemberCount = Math.max(Number(data?.data?.memberCount || members.length || 1), 1);
+      setQuotaInfo(data?.data?.usage || null);
       const normalized = rawTasks.map((task, index) => ({
         id: index,
         title: task.title || `Task ${index + 1}`,
         description: task.description || '',
         priority: task.priority || 'MEDIUM',
-        estimated_hours: task.effortHours || task.estimated_hours || 2,
-        due_date: task.dueDate || task.due_date || null,
-        category: task.category || '',
-        dependsOn: task.dependsOn || task.depends_on || [],
-        assessmentSection: task.assessmentSection || task.assessment_section || '',
-        suggestedOwner: task.suggestedOwner || task.suggested_owner || '',
-        assignmentReason: task.assignmentReason || task.assignment_reason || '',
+        estimated_hours: task.estimated_hours || 2,
+        suggested_due_date: calculateSuggestedDueDate(assessmentDueDate, index, rawTasks.length),
         status: 'TO_DO',
         assigned_to_email: '',
       }));
 
-      setPlanOutput(plan);
       setGeneratedTasks(normalized);
-      setStep(6);
-      setAssistantNote('AI plan ready. Review the summary and assign tasks below.');
+      setStep(5);
+  setAssistantNote(`AI plan ready for ${plannedMemberCount} team member${plannedMemberCount === 1 ? '' : 's'}. Review the summary and make sure the workload looks balanced before assignment.`);
     } catch (err) {
+      const usage = err?.response?.data?.data?.usage || null;
+      setQuotaInfo(usage);
       setError(err.message || 'Failed to generate tasks. Please try again.');
       setAssistantNote('AI planning failed. Adjust your brief or try again.');
     } finally {
@@ -245,10 +274,70 @@ export default function AIPlannerPage() {
     setGeneratedTasks((prev) => prev.map((task) => (task.id === id ? { ...task, title } : task)));
   };
 
+  const updateTaskDescription = (id, description) => {
+    setGeneratedTasks((prev) => prev.map((task) => (task.id === id ? { ...task, description } : task)));
+  };
+
+  const updateTaskPriority = (id, priority) => {
+    setGeneratedTasks((prev) => prev.map((task) => (task.id === id ? { ...task, priority } : task)));
+  };
+
+  const updateTaskEstimatedHours = (id, estimatedHours) => {
+    const normalizedHours = Math.max(1, Math.min(8, Number(estimatedHours) || 1));
+    setGeneratedTasks((prev) => prev.map((task) => (task.id === id ? { ...task, estimated_hours: normalizedHours } : task)));
+  };
+
   const assignTask = (id, assigned_to_email) => {
     setGeneratedTasks((prev) =>
       prev.map((task) => (task.id === id ? { ...task, assigned_to_email } : task))
     );
+  };
+
+  const handleAutoAssignEvenly = () => {
+    if (!members.length || !generatedTasks.length) {
+      setError('Load team members and generate tasks before auto-assigning.');
+      return;
+    }
+
+    const assignees = members
+      .map((member) => ({
+        email: String(member.email || '').trim().toLowerCase(),
+        totalHours: 0,
+        taskCount: 0,
+      }))
+      .filter((member) => member.email);
+
+    if (!assignees.length) {
+      setError('No valid team member emails found for auto-assignment.');
+      return;
+    }
+
+    const sortedTasks = [...generatedTasks]
+      .map((task, originalIndex) => ({ task, originalIndex }))
+      .sort((a, b) => (Number(b.task.estimated_hours) || 1) - (Number(a.task.estimated_hours) || 1));
+
+    const next = [...generatedTasks];
+    for (const { task, originalIndex } of sortedTasks) {
+      assignees.sort((a, b) => {
+        if (a.totalHours !== b.totalHours) return a.totalHours - b.totalHours;
+        return a.taskCount - b.taskCount;
+      });
+
+      const selected = assignees[0];
+      const hours = Math.max(1, Math.min(8, Number(task.estimated_hours) || 1));
+
+      next[originalIndex] = {
+        ...next[originalIndex],
+        assigned_to_email: selected.email,
+      };
+
+      selected.totalHours += hours;
+      selected.taskCount += 1;
+    }
+
+    setGeneratedTasks(next);
+    setError('');
+    setAssistantNote('Tasks auto-assigned for balanced workload. Review and adjust if needed.');
   };
 
   const handleConfirmReview = () => {
@@ -269,6 +358,11 @@ export default function AIPlannerPage() {
 
     if (!canPublish) {
       setError('Assign every task to a team member before publishing.');
+      return;
+    }
+
+    if (!workloadSummary?.isBalanced) {
+      setError(`Workload is unbalanced. Keep the difference to ${MAX_WORKLOAD_VARIANCE_HOURS}h or less before publishing.`);
       return;
     }
 
@@ -335,7 +429,15 @@ export default function AIPlannerPage() {
         <CardContent className="flex flex-col gap-3">
           <div className="flex items-start gap-3">
             <Sparkles className="w-5 h-5 text-indigo-500 mt-0.5" />
-            <p className="text-sm text-slate-700 dark:text-slate-300">{assistantNote}</p>
+            <div className="space-y-2">
+              <p className="text-sm text-slate-700 dark:text-slate-300">{assistantNote}</p>
+              {quotaInfo && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  AI generations used: {quotaInfo.generationCount} / {quotaInfo.limit}
+                  {quotaInfo.resetAt ? ` • resets ${formatDate(quotaInfo.resetAt)}` : ''}
+                </p>
+              )}
+            </div>
           </div>
           {error && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
@@ -503,7 +605,7 @@ export default function AIPlannerPage() {
                   setPromptText(e.target.value);
                   if (step < 3) setStep(3);
                 }}
-                placeholder="Paste the assignment brief here; for marketing/campaign tasks include roles, deliverables, and campaign outputs like SWOT, personas, media framework, messaging hooks, budget, KPI targets, and charter PDF."
+                placeholder="Paste the assignment brief here..."
                 className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-teal-400"
               />
             )}
@@ -572,9 +674,8 @@ export default function AIPlannerPage() {
                 <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{planSummary.taskCount}</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Fairness score</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{planSummary.fairnessScore != null ? `${planSummary.fairnessScore}%` : 'Pending'}</p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Balanced workload across team members.</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Risk level</p>
+                <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{planSummary.riskLevel}</p>
               </div>
             </div>
 
@@ -597,6 +698,72 @@ export default function AIPlannerPage() {
               </div>
             </div>
 
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Generated tasks</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Review the exact tasks SmartGroup generated before moving to assignment.</p>
+              </div>
+              <div className="grid gap-3">
+                {generatedTasks.map((task) => (
+                  <div key={task.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+                      <div className="space-y-3 min-w-0">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Task title</label>
+                          <input
+                            value={task.title}
+                            onChange={(e) => updateTaskTitle(task.id, e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Description</label>
+                          <textarea
+                            rows={3}
+                            value={task.description}
+                            onChange={(e) => updateTaskDescription(task.id, e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Priority</label>
+                          <select
+                            value={task.priority}
+                            onChange={(e) => updateTaskPriority(task.id, e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          >
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Effort hours</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="8"
+                            value={task.estimated_hours}
+                            onChange={(e) => updateTaskEstimatedHours(task.id, e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Badge variant={task.priority === 'HIGH' ? 'destructive' : task.priority === 'LOW' ? 'default' : 'warning'}>
+                            {task.priority}
+                          </Badge>
+                          <Badge variant="blue">{task.estimated_hours}h</Badge>
+                          {task.suggested_due_date && <Badge variant="outline">Due {task.suggested_due_date}</Badge>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="flex justify-end">
               <Button onClick={handleConfirmReview} variant="outline">Proceed to Assign Tasks</Button>
             </div>
@@ -610,6 +777,33 @@ export default function AIPlannerPage() {
             <CardTitle>Step 6: Assign Tasks</CardTitle>
             <CardDescription>Assign each AI-generated task to a team member.</CardDescription>
           </CardHeader>
+          <CardContent className="space-y-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Balanced assignment helper</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Auto-assign tasks to distribute workload as evenly as possible.</p>
+              </div>
+              <Button variant="outline" onClick={handleAutoAssignEvenly} disabled={saving || membersLoading || members.length === 0}>
+                Auto-Assign Equally
+              </Button>
+            </div>
+
+            {workloadSummary && (
+              <div className={`rounded-2xl border p-3 ${workloadSummary.isBalanced ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'}`}>
+                <p className={`text-sm font-medium ${workloadSummary.isBalanced ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200'}`}>
+                  Workload variance: {workloadSummary.varianceHours}h (limit {workloadSummary.limitHours}h)
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {workloadSummary.rows.map((row) => (
+                    <div key={row.email} className="rounded-xl bg-white/80 px-3 py-2 text-xs text-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
+                      <p className="font-medium truncate">{row.name}</p>
+                      <p>{row.taskCount} task{row.taskCount === 1 ? '' : 's'} • {row.totalHours}h</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-sm">
               <thead>
@@ -658,8 +852,10 @@ export default function AIPlannerPage() {
             </table>
           </CardContent>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
-            <div className="text-sm text-slate-500 dark:text-slate-400">Once all tasks are assigned, publish the plan to make it available in My Tasks.</div>
-            <Button onClick={handlePublishPlan} disabled={saving || !canPublish} variant="teal">
+            <div className="text-sm text-slate-500 dark:text-slate-400">
+              Once all tasks are assigned and workload is balanced, publish the plan to make it available in My Tasks.
+            </div>
+            <Button onClick={handlePublishPlan} disabled={saving || !canPublishBalanced} variant="teal">
               {saving ? 'Publishing plan...' : 'Publish Plan'}
             </Button>
           </CardContent>
