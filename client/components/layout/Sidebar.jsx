@@ -85,14 +85,16 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navItems.map(({ label, href, icon: Icon }) => {
+          {navItems.map(({ label, href, icon: Icon }, index) => {
             const isActive = pathname === href || pathname.startsWith(href + '/');
             return (
               <Link
                 key={href}
                 href={href}
                 onClick={onClose}
+                style={{ animationDelay: `${index * 35}ms` }}
                 className={`
+                  sg-nav-reveal
                   relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
                   ${
                     isActive
