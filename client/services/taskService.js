@@ -1,7 +1,13 @@
 import api from './api';
 
-export async function getTasks(groupId) {
-  const response = await api.get('/tasks', { params: { groupId } });
+export async function getTasks(groupId, assessmentId, options = {}) {
+  const { includeAcceptedOnly = true } = options;
+  const params = { groupId };
+  if (assessmentId) {
+    params.assessmentId = assessmentId;
+  }
+  params.includeAcceptedOnly = includeAcceptedOnly;
+  const response = await api.get('/tasks', { params });
   return response.data;
 }
 
@@ -71,6 +77,16 @@ export async function updateTask(taskId, data) {
 }
 
 export async function updateTaskStatus(taskId, status) {
-  const response = await api.patch(`/tasks/${taskId}/status`, { status });
-  return response.data;
+  try {
+    const response = await api.patch(`/tasks/${taskId}/status`, { status });
+    return response.data;
+  } catch (primaryError) {
+    // Some backend deployments expose status updates via PATCH /tasks/:taskId.
+    try {
+      const fallbackResponse = await api.patch(`/tasks/${taskId}`, { status });
+      return fallbackResponse.data;
+    } catch {
+      throw primaryError;
+    }
+  }
 }

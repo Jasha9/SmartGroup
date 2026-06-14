@@ -137,7 +137,7 @@ function normalizeGroupedShape(list) {
       group_name: section.group_name || 'Unknown Group',
       due_date: section.due_date || null,
       tasks: tasks.map((task, taskIndex) => ({
-        task_id: task.task_id || task.id || `${index}-${taskIndex}`,
+        task_id: task.task_id || task.taskId || task.id || `${index}-${taskIndex}`,
         title: task.title || 'Untitled Task',
         description: task.description || '',
         status: task.status || 'TO_DO',
@@ -178,7 +178,7 @@ function normalizeFlatShape(list) {
     }
 
     sections.get(key).tasks.push({
-      task_id: task.task_id || task.id || `${key}-${index}`,
+      task_id: task.task_id || task.taskId || task.id || `${key}-${index}`,
       title: task.title || 'Untitled Task',
       description: task.description || '',
       status: task.status || 'TO_DO',
@@ -522,21 +522,28 @@ export default function MyTasksPage() {
     try {
       await acceptTask(taskId);
       await loadMyTasks();
-    } catch {
-      setActionError('Unable to update task status. Please try again.');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Unable to update task status. Please try again.';
+      setActionError(message);
     } finally {
       setUpdatingTaskId(null);
     }
   };
 
   const handleUpdateTaskStatus = async (taskId, status) => {
+    if (!isUuid(taskId)) {
+      setActionError('This task is missing a valid ID. Please refresh and try again.');
+      return;
+    }
+
     setUpdatingTaskId(taskId);
     setActionError(null);
     try {
       await updateTaskStatus(taskId, status);
       await loadMyTasks();
-    } catch {
-      setActionError('Unable to update task status. Please try again.');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Unable to update task status. Please try again.';
+      setActionError(message);
     } finally {
       setUpdatingTaskId(null);
     }

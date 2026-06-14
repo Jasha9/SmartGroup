@@ -151,29 +151,12 @@ export default function LoginPage() {
           </div>
         </header>
 
-        <main className="space-y-24 py-12">
-          <div className="fixed bottom-6 right-6 z-40 hidden max-w-sm rounded-[2rem] border border-slate-200 bg-white/95 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100 md:block">
-            <div className="flex items-start gap-4">
-              <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-3xl bg-indigo-600 text-white">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm uppercase tracking-[0.35em] text-indigo-600 dark:text-indigo-400">Demo Available</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
-                  Ready to see SmartGroup in action? Request a tailored walkthrough with one click.
-                </p>
-                <Button variant="indigo" size="sm" className="mt-4" onClick={openDemoPopup}>
-                  Request a Demo
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 px-6 py-16 shadow-2xl shadow-slate-200/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/20 sm:px-10 lg:px-12">
+        <main className="space-y-16 py-6 md:py-8">
+          <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 px-6 py-12 shadow-2xl shadow-slate-200/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/20 sm:px-10 md:py-14 lg:px-12">
             <div className="pointer-events-none absolute -right-24 top-10 hidden h-72 w-72 rounded-full bg-teal-300/30 blur-3xl md:block" />
             <div className="pointer-events-none absolute left-0 top-28 hidden h-56 w-56 rounded-full bg-amber-200/40 blur-3xl md:block" />
-            <div className="grid gap-12 lg:grid-cols-[1fr_auto] lg:items-center">
-              <div className="max-w-2xl space-y-8">
+            <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div className="max-w-2xl space-y-6">
                 <Badge variant="blue" className="uppercase tracking-[0.32em] text-xs font-semibold text-slate-950 dark:text-white">
                   Built for student teams
                 </Badge>
@@ -425,6 +408,23 @@ export default function LoginPage() {
             )}
           </Modal>
         </main>
+
+        <div className="fixed bottom-6 right-6 z-40 hidden max-w-sm rounded-[2rem] border border-slate-200 bg-white/95 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100 md:block">
+          <div className="flex items-start gap-4">
+            <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-3xl bg-indigo-600 text-white">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.35em] text-indigo-600 dark:text-indigo-400">Demo Available</p>
+              <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                Ready to see SmartGroup in action? Request a tailored walkthrough with one click.
+              </p>
+              <Button variant="indigo" size="sm" className="mt-4" onClick={openDemoPopup}>
+                Request a Demo
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

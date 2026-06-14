@@ -67,7 +67,7 @@ export default function Topbar({ onMenuClick }) {
     : '?';
 
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-4 px-6 py-3.5 bg-white/70 dark:bg-slate-900/75 backdrop-blur-xl border-b border-slate-200/70 dark:border-slate-800">
+    <header className="sg-flow-in sticky top-0 z-10 flex items-center gap-4 px-6 py-3.5 bg-white/70 dark:bg-slate-900/75 backdrop-blur-xl border-b border-slate-200/70 dark:border-slate-800">
       <button
         onClick={onMenuClick}
         className="lg:hidden p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -86,7 +86,7 @@ export default function Topbar({ onMenuClick }) {
       <div className="flex items-center gap-1">
         <button
           onClick={() => router.push('/action-center')}
-          className="relative p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          className="sg-soft-float relative p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
           <Sparkles className="w-5 h-5" />
           {unreadCount > 0 && (

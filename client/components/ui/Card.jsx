@@ -1,7 +1,7 @@
 export function Card({ children, className = '', ...props }) {
   return (
     <div
-      className={`rounded-[24px] border border-white/70 dark:border-slate-800/90 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg shadow-[0_10px_40px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_40px_rgba(2,6,23,0.55)] transition-all duration-200 hover:shadow-[0_14px_45px_rgba(15,23,42,0.12)] ${className}`}
+      className={`sg-flow-in sg-glow-hover rounded-[24px] border border-white/70 dark:border-slate-800/90 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg shadow-[0_10px_40px_rgba(15,23,42,0.08)] dark:shadow-[0_10px_40px_rgba(2,6,23,0.55)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_45px_rgba(15,23,42,0.12)] ${className}`}
       {...props}
     >
       {children}

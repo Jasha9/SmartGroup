@@ -83,6 +83,64 @@
   .sg-fade-in {
     animation: sg-fade-in 260ms ease-out;
   }
+
+  .sg-flow-in {
+    animation: sg-flow-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sg-soft-float {
+    animation: sg-soft-float 7s ease-in-out infinite;
+  }
+
+  .sg-glow-hover {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .sg-glow-hover::before {
+    content: '';
+    position: absolute;
+    inset: -35% -45%;
+    background: radial-gradient(circle at center, rgba(56, 189, 248, 0.18), transparent 65%);
+    opacity: 0;
+    transform: scale(0.86);
+    transition: opacity 260ms ease, transform 260ms ease;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .sg-glow-hover:hover::before {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .sg-button-flow {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .sg-button-flow::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(110deg, transparent 15%, rgba(255, 255, 255, 0.28) 48%, transparent 78%);
+    transform: translateX(-130%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sg-button-flow:hover::after {
+    opacity: 1;
+    animation: sg-sheen 700ms ease;
+  }
+
+  .sg-nav-reveal {
+    opacity: 0;
+    transform: translateX(-8px);
+    animation: sg-nav-reveal 320ms ease forwards;
+  }
 }
 
 @keyframes sg-shimmer {
@@ -102,5 +160,56 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes sg-flow-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sg-soft-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes sg-sheen {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+@keyframes sg-nav-reveal {
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-fade-in,
+  .sg-flow-in,
+  .sg-soft-float,
+  .sg-nav-reveal,
+  .sg-button-flow:hover::after {
+    animation: none !important;
+  }
+
+  .sg-glow-hover::before,
+  .sg-button-flow::after {
+    display: none !important;
   }
 }

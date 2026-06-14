@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getGroups, getGroupAssessments, getGroupMembers } from '@/services/groupService';
 import { getTasks } from '@/services/taskService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -8,6 +8,7 @@ import Badge from '@/components/ui/Badge';
 import LoadingState from '@/components/ui/LoadingState';
 import Progress from '@/components/ui/Progress';
 import { subscribeDataSync } from '@/lib/dataSync';
+import TeamProgressPieChart from '@/components/charts/TeamProgressPieChart';
 
 function normalizeStatus(status) {
   return String(status || 'TO_DO').toUpperCase();
@@ -20,96 +21,121 @@ function safeName(member) {
 export default function ContributionDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sections, setSections] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [assessments, setAssessments] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState('');
 
-  const loadData = async () => {
-      try {
-        setError(null);
-        const groupsRes = await getGroups();
-        const groups = groupsRes?.data?.groups || groupsRes?.groups || [];
+  const loadGroups = useCallback(async () => {
+    const groupsRes = await getGroups();
+    return groupsRes?.data?.groups || groupsRes?.groups || [];
+  }, []);
 
-        const built = [];
+  const loadGroupContext = useCallback(async (groupId) => {
+    const [membersRes, assessmentsRes] = await Promise.all([
+      getGroupMembers(groupId),
+      getGroupAssessments(groupId),
+    ]);
 
-        for (const group of groups) {
-          const groupId = group.group_id || group.id;
-          const groupName = group.group_name || group.name || 'Unknown Group';
+    const nextMembers = membersRes?.data?.members || membersRes?.members || [];
+    const nextAssessments = assessmentsRes?.data?.assessments || assessmentsRes?.assessments || [];
 
-          const [membersRes, assessmentsRes, tasksRes] = await Promise.all([
-            getGroupMembers(groupId),
-            getGroupAssessments(groupId),
-            getTasks(groupId),
-          ]);
+    setMembers(nextMembers);
+    setAssessments(nextAssessments);
 
-          const members = membersRes?.data?.members || membersRes?.members || [];
-          const assessments = assessmentsRes?.data?.assessments || assessmentsRes?.assessments || [];
-          const tasks = tasksRes?.data?.tasks || tasksRes?.tasks || [];
+    return nextAssessments;
+  }, []);
 
-          assessments.forEach((assessment) => {
-            const assessmentId = assessment.assessment_id;
-            const assessmentTasks = tasks.filter((task) => task.assessment_id === assessmentId);
+  const loadTasks = useCallback(async (groupId, assessmentId) => {
+    const tasksRes = await getTasks(groupId, assessmentId || undefined, { includeAcceptedOnly: false });
+    const fetched = tasksRes?.data?.tasks || tasksRes?.tasks || [];
+    setTasks(fetched);
+  }, []);
 
-            const memberRows = members.map((member) => {
-              const assigned = assessmentTasks.filter(
-                (task) =>
-                  task.assigned_to_email === member.email ||
-                  task.assigned_to_name === member.full_name ||
-                  task.assigned_to_user_id === member.user_id
-              );
+  const loadAll = useCallback(async () => {
+    try {
+      setError(null);
+      const nextGroups = await loadGroups();
+      setGroups(nextGroups);
 
-              const todo = assigned.filter((task) => normalizeStatus(task.status) === 'TO_DO').length;
-              const inProgress = assigned.filter((task) => normalizeStatus(task.status) === 'IN_PROGRESS').length;
-              const done = assigned.filter((task) => normalizeStatus(task.status) === 'DONE').length;
-              const total = todo + inProgress + done;
-              const completion = total > 0 ? Math.round((done / total) * 100) : 0;
-
-              return {
-                user_id: member.user_id,
-                name: safeName(member),
-                todo,
-                inProgress,
-                done,
-                total,
-                completion,
-              };
-            });
-
-            const totals = {
-              todo: assessmentTasks.filter((task) => normalizeStatus(task.status) === 'TO_DO').length,
-              inProgress: assessmentTasks.filter((task) => normalizeStatus(task.status) === 'IN_PROGRESS').length,
-              done: assessmentTasks.filter((task) => normalizeStatus(task.status) === 'DONE').length,
-            };
-
-            built.push({
-              groupId,
-              groupName,
-              assessmentId,
-              assessmentTitle: assessment.title || 'Untitled Assessment',
-              dueDate: assessment.due_date,
-              memberRows: memberRows.filter((row) => row.total > 0),
-              totals,
-            });
-          });
-        }
-
-        setSections(built);
-      } catch {
-        setError('Failed to load team progress. Please try again.');
-      } finally {
-        setLoading(false);
+      if (nextGroups.length === 0) {
+        setSelectedGroupId('');
+        setSelectedAssessmentId('');
+        setAssessments([]);
+        setMembers([]);
+        setTasks([]);
+        return;
       }
-    };
+
+      const currentGroupStillExists = nextGroups.some((g) => String(g.group_id || g.id) === String(selectedGroupId));
+      const nextGroupId = currentGroupStillExists
+        ? selectedGroupId
+        : String(nextGroups[0].group_id || nextGroups[0].id || '');
+
+      setSelectedGroupId(nextGroupId);
+
+      const nextAssessments = await loadGroupContext(nextGroupId);
+      const currentAssessmentStillExists = nextAssessments.some((a) => String(a.assessment_id) === String(selectedAssessmentId));
+      const nextAssessmentId = currentAssessmentStillExists
+        ? selectedAssessmentId
+        : String(nextAssessments[0]?.assessment_id || '');
+
+      setSelectedAssessmentId(nextAssessmentId);
+      await loadTasks(nextGroupId, nextAssessmentId);
+    } catch {
+      setError('Failed to load team progress. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [loadGroups, loadGroupContext, loadTasks, selectedAssessmentId, selectedGroupId]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadAll();
+  }, [loadAll]);
+
+  useEffect(() => {
+    if (!selectedGroupId) return;
+
+    async function refreshGroupContext() {
+      try {
+        setError(null);
+        const nextAssessments = await loadGroupContext(selectedGroupId);
+        const stillExists = nextAssessments.some((a) => String(a.assessment_id) === String(selectedAssessmentId));
+        const resolvedAssessmentId = stillExists ? selectedAssessmentId : String(nextAssessments[0]?.assessment_id || '');
+        setSelectedAssessmentId(resolvedAssessmentId);
+        await loadTasks(selectedGroupId, resolvedAssessmentId);
+      } catch {
+        setError('Failed to load team progress. Please try again.');
+      }
+    }
+
+    refreshGroupContext();
+  }, [selectedGroupId]);
+
+  useEffect(() => {
+    if (!selectedGroupId) return;
+
+    async function refreshTasksOnly() {
+      try {
+        setError(null);
+        await loadTasks(selectedGroupId, selectedAssessmentId);
+      } catch {
+        setError('Failed to load team progress. Please try again.');
+      }
+    }
+
+    refreshTasksOnly();
+  }, [selectedAssessmentId]);
 
   useEffect(() => {
     const unsubscribe = subscribeDataSync(() => {
-      loadData();
+      loadAll();
     });
 
     const onFocus = () => {
-      loadData();
+      loadAll();
     };
 
     window.addEventListener('focus', onFocus);
@@ -117,23 +143,86 @@ export default function ContributionDashboardPage() {
       unsubscribe();
       window.removeEventListener('focus', onFocus);
     };
-  }, []);
+  }, [loadAll]);
 
-  const overall = useMemo(() => {
-    const totals = sections.reduce(
-      (acc, section) => {
-        acc.todo += section.totals.todo;
-        acc.inProgress += section.totals.inProgress;
-        acc.done += section.totals.done;
-        return acc;
-      },
-      { todo: 0, inProgress: 0, done: 0 }
-    );
+  const selectedGroupName = useMemo(() => {
+    const match = groups.find((g) => String(g.group_id || g.id) === String(selectedGroupId));
+    return match?.group_name || match?.name || 'Unknown Group';
+  }, [groups, selectedGroupId]);
 
-    const total = totals.todo + totals.inProgress + totals.done;
-    const completion = total > 0 ? Math.round((totals.done / total) * 100) : 0;
-    return { ...totals, total, completion };
-  }, [sections]);
+  const selectedAssessment = useMemo(() => {
+    return assessments.find((a) => String(a.assessment_id) === String(selectedAssessmentId)) || null;
+  }, [assessments, selectedAssessmentId]);
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      Done: 0,
+      'In Progress': 0,
+      'To Do': 0,
+      Pending: 0,
+      'Change Requested': 0,
+    };
+
+    tasks.forEach((task) => {
+      const status = normalizeStatus(task.status);
+      if (status === 'DONE') counts.Done += 1;
+      else if (status === 'IN_PROGRESS') counts['In Progress'] += 1;
+      else if (status === 'TO_DO') counts['To Do'] += 1;
+      else if (status === 'PENDING_ACCEPTANCE') counts.Pending += 1;
+      else if (status === 'NEGOTIATING' || status === 'CHANGE_REQUESTED') counts['Change Requested'] += 1;
+    });
+
+    return counts;
+  }, [tasks]);
+
+  const chartData = useMemo(() => {
+    return [
+      { name: 'Done', value: statusCounts.Done },
+      { name: 'In Progress', value: statusCounts['In Progress'] },
+      { name: 'To Do', value: statusCounts['To Do'] },
+      { name: 'Pending', value: statusCounts.Pending },
+      { name: 'Change Requested', value: statusCounts['Change Requested'] },
+    ];
+  }, [statusCounts]);
+
+  const memberRows = useMemo(() => {
+    return members
+      .map((member) => {
+        const assigned = tasks.filter(
+          (task) =>
+            task.assigned_to_email === member.email ||
+            task.assigned_to_name === member.full_name ||
+            task.assigned_to_user_id === member.user_id
+        );
+
+        const done = assigned.filter((task) => normalizeStatus(task.status) === 'DONE').length;
+        const inProgress = assigned.filter((task) => normalizeStatus(task.status) === 'IN_PROGRESS').length;
+        const todo = assigned.filter((task) => normalizeStatus(task.status) === 'TO_DO').length;
+        const pending = assigned.filter((task) => normalizeStatus(task.status) === 'PENDING_ACCEPTANCE').length;
+        const changeRequested = assigned.filter((task) => {
+          const status = normalizeStatus(task.status);
+          return status === 'NEGOTIATING' || status === 'CHANGE_REQUESTED';
+        }).length;
+        const total = assigned.length;
+        const completion = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        return {
+          user_id: member.user_id,
+          name: safeName(member),
+          done,
+          inProgress,
+          todo,
+          pending,
+          changeRequested,
+          total,
+          completion,
+        };
+      })
+      .filter((row) => row.total > 0);
+  }, [members, tasks]);
+
+  const totalTasks = useMemo(() => chartData.reduce((sum, item) => sum + item.value, 0), [chartData]);
+  const completion = totalTasks > 0 ? Math.round((statusCounts.Done / totalTasks) * 100) : 0;
 
   if (loading) {
     return (
@@ -157,112 +246,143 @@ export default function ContributionDashboardPage() {
         </div>
       )}
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Team Progress Filters</CardTitle>
+          <CardDescription>Select a group and assessment to view real task distribution.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                Group
+              </label>
+              <select
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100"
+                value={selectedGroupId}
+                onChange={(event) => setSelectedGroupId(event.target.value)}
+              >
+                {groups.length === 0 ? (
+                  <option value="">No groups available</option>
+                ) : (
+                  groups.map((group) => {
+                    const id = String(group.group_id || group.id);
+                    const name = group.group_name || group.name || 'Unknown Group';
+                    return (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    );
+                  })
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                Assessment
+              </label>
+              <select
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100"
+                value={selectedAssessmentId}
+                onChange={(event) => setSelectedAssessmentId(event.target.value)}
+                disabled={assessments.length === 0}
+              >
+                {assessments.length === 0 ? (
+                  <option value="">No assessments available</option>
+                ) : (
+                  assessments.map((assessment) => (
+                    <option key={assessment.assessment_id} value={assessment.assessment_id}>
+                      {assessment.title || 'Untitled Assessment'}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500 dark:text-slate-400">To Do</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.todo}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{statusCounts['To Do']}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500 dark:text-slate-400">In Progress</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.inProgress}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{statusCounts['In Progress']}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500 dark:text-slate-400">Done</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.done}</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{statusCounts.Done}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500 dark:text-slate-400">Completion</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{overall.completion}%</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{completion}%</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Overall Progress</CardTitle>
-          <CardDescription>Completion across all groups and assessments.</CardDescription>
+          <CardTitle>Team Progress Overview</CardTitle>
+          <CardDescription>Task status distribution for the selected assessment.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          <Progress value={overall.completion} variant="teal" />
-          <div className="h-2 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex">
-            <div className="bg-slate-400" style={{ width: `${overall.total > 0 ? (overall.todo / overall.total) * 100 : 0}%` }} />
-            <div className="bg-teal-500" style={{ width: `${overall.total > 0 ? (overall.inProgress / overall.total) * 100 : 0}%` }} />
-            <div className="bg-emerald-500" style={{ width: `${overall.total > 0 ? (overall.done / overall.total) * 100 : 0}%` }} />
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {selectedGroupName} {selectedAssessment ? `· ${selectedAssessment.title || 'Untitled Assessment'}` : ''}
+            </p>
+            <Badge variant="default">{totalTasks} tasks</Badge>
           </div>
+          <TeamProgressPieChart data={chartData} />
         </CardContent>
       </Card>
 
-      {sections.length === 0 ? (
+      {totalTasks === 0 ? (
         <Card>
           <CardContent className="py-14 text-center text-slate-500 dark:text-slate-400">
-            No assessment progress data yet.
+            No task progress available yet.
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {sections.map((section) => {
-            const total = section.totals.todo + section.totals.inProgress + section.totals.done;
-            const completion = total > 0 ? Math.round((section.totals.done / total) * 100) : 0;
-            return (
-              <Card key={`${section.groupId}-${section.assessmentId}`}>
-                <CardHeader>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-lg">{section.assessmentTitle}</CardTitle>
-                      <CardDescription>{section.groupName}</CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="default">To Do {section.totals.todo}</Badge>
-                      <Badge variant="blue">In Progress {section.totals.inProgress}</Badge>
-                      <Badge variant="accepted">Done {section.totals.done}</Badge>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between text-xs mb-2 text-slate-500 dark:text-slate-400">
-                      <span>Assessment completion</span>
-                      <span>{completion}%</span>
-                    </div>
-                    <Progress value={completion} variant="teal" />
+        <Card>
+          <CardHeader>
+            <CardTitle>Member Progress</CardTitle>
+            <CardDescription>Contribution split for selected group and assessment.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {memberRows.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No assigned members for this assessment.</p>
+            ) : (
+              memberRows.map((member) => (
+                <div key={`member-${member.user_id}`} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{member.name}</p>
+                    <Badge variant="default">{member.completion}%</Badge>
                   </div>
 
-                  {section.memberRows.length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No assigned members for this assessment.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {section.memberRows.map((member) => (
-                        <div key={`${section.assessmentId}-${member.user_id}`} className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{member.name}</p>
-                            <Badge variant="default">{member.completion}%</Badge>
-                          </div>
-                          <div className="h-2 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 flex">
-                            <div className="bg-slate-400" style={{ width: `${member.total > 0 ? (member.todo / member.total) * 100 : 0}%` }} />
-                            <div className="bg-teal-500" style={{ width: `${member.total > 0 ? (member.inProgress / member.total) * 100 : 0}%` }} />
-                            <div className="bg-emerald-500" style={{ width: `${member.total > 0 ? (member.done / member.total) * 100 : 0}%` }} />
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
-                            <span>To Do: {member.todo}</span>
-                            <span>In Progress: {member.inProgress}</span>
-                            <span>Done: {member.done}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  <Progress value={member.completion} variant="teal" />
+
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span>Done: {member.done}</span>
+                    <span>In Progress: {member.inProgress}</span>
+                    <span>To Do: {member.todo}</span>
+                    <span>Pending: {member.pending}</span>
+                    <span>Change Requested: {member.changeRequested}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

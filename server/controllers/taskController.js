@@ -307,17 +307,19 @@ async function findMentionedUsers(client, task, commentText, authorUserId) {
 
 // GET /api/tasks?groupId=<id>&assessmentId=<id>&assignedUserId=<id>
 async function getTasks(req, res) {
-  const { groupId, assessmentId, assignedUserId } = req.query;
+  const { groupId, assessmentId, assignedUserId, includeAcceptedOnly } = req.query;
   if (!groupId) {
     return res.status(400).json({ success: false, error: 'groupId is required.' });
   }
+
+  const acceptedOnly = String(includeAcceptedOnly ?? 'true').toLowerCase() !== 'false';
 
   try {
     const { where, values } = buildTaskRowFilter({
       groupId,
       assessmentId,
       assignedUserId,
-      includeAcceptedOnly: true,
+      includeAcceptedOnly: acceptedOnly,
     });
 
     const query = `${buildTaskSelectClause()}
@@ -1106,9 +1108,9 @@ async function updateTask(req, res) {
       UPDATE tasks
       SET title = COALESCE(NULLIF($1, ''), title),
           description = COALESCE($2, description),
-          status = COALESCE($3, status),
+          status = COALESCE($3::varchar, status),
           priority = COALESCE($4, priority),
-          assigned_to = CASE WHEN $5 IS NOT NULL THEN $5 ELSE assigned_to END,
+          assigned_to = COALESCE($5::uuid, assigned_to),
           due_date = $6,
           assessment_id = COALESCE($7, assessment_id),
           progress_percentage = COALESCE($8, progress_percentage),
@@ -1154,26 +1156,41 @@ async function updateTaskStatus(req, res) {
     return res.status(400).json({ success: false, error: 'Invalid status.' });
   }
   try {
-    const taskResult = await pool.query(
-      `UPDATE tasks
-       SET status = $1,
-           progress_percentage = CASE
-             WHEN $1 = 'DONE' THEN 100
-             WHEN $1 = 'TO_DO' THEN LEAST(progress_percentage, 25)
-             ELSE progress_percentage
-           END,
-           updated_at = NOW()
-       WHERE task_id = $2
-       RETURNING *`,
-      [normalizedStatus, taskId]
-    );
+    let taskResult;
+
+    try {
+      taskResult = await pool.query(
+        `UPDATE tasks
+         SET status = $1::varchar,
+             progress_percentage = CASE
+               WHEN $1::text = 'DONE' THEN 100
+               WHEN $1::text = 'TO_DO' THEN LEAST(progress_percentage, 25)
+               ELSE progress_percentage
+             END,
+             updated_at = NOW()
+         WHERE task_id::text = $2
+         RETURNING *`,
+        [normalizedStatus, taskId]
+      );
+    } catch (richUpdateError) {
+      // Fallback for deployments where progress columns or expressions are unavailable.
+      taskResult = await pool.query(
+        `UPDATE tasks
+         SET status = $1::varchar,
+             updated_at = NOW()
+         WHERE task_id::text = $2
+         RETURNING *`,
+        [normalizedStatus, taskId]
+      );
+    }
+
     if (taskResult.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Task not found.' });
     }
     return res.json({ success: true, data: { task: taskResult.rows[0] } });
   } catch (err) {
     console.error('[updateTaskStatus]', err.message);
-    return res.status(500).json({ success: false, error: 'Failed to update task status.' });
+    return res.status(500).json({ success: false, error: err.message || 'Failed to update task status.' });
   }
 }
 

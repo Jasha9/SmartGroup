@@ -13,6 +13,7 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import LoadingState from '@/components/ui/LoadingState';
 import Progress from '@/components/ui/Progress';
+import CreateGroupButton from '@/components/workspace/CreateGroupButton';
 import { AlertTriangle, CalendarClock, CheckCircle2, Users, Bell, Sparkles, TrendingUp, Clock3 } from 'lucide-react';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -129,6 +130,8 @@ export default function DashboardPage() {
 
   const taskGroups = myTasksPayload.grouped;
   const allTasks = myTasksPayload.tasks;
+  const hasGroups = groups.length > 0;
+  const firstName = user?.full_name?.split(' ')[0] || 'Student';
 
   const stats = useMemo(() => {
     const now = Date.now();
@@ -159,12 +162,14 @@ export default function DashboardPage() {
       .slice(0, 5);
 
     const unreadAlerts = notifications.filter((n) => !n.is_read).length;
+    const pendingTasks = allTasks.filter((task) => normalizeStatus(task.status) !== 'DONE').length;
 
     return {
       urgentTasks,
       pendingResponsibilities,
       activeGroups,
       activeAssessments,
+      pendingTasks,
       upcomingDue,
       unreadAlerts,
     };
@@ -263,15 +268,56 @@ export default function DashboardPage() {
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="space-y-1">
         <p className="sg-eyebrow">Workflow Overview</p>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Welcome back, {user?.full_name?.split(' ')[0] || 'Student'}</h2>
-        <p className="text-slate-500 dark:text-slate-400">User → Group → Assessment → Tasks snapshot for today.</p>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+          {hasGroups ? `Welcome Back, ${firstName} 👋` : `Welcome to SmartGroup, ${firstName} 👋`}
+        </h2>
+        <p className="text-slate-500 dark:text-slate-400">
+          {hasGroups ? 'User → Group → Assessment → Tasks snapshot for today.' : "Let's get your first project started."}
+        </p>
+        {hasGroups && (
+          <div className="flex flex-wrap gap-2 pt-2 text-sm text-slate-600 dark:text-slate-300">
+            <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800">Active Groups: {stats.activeGroups}</span>
+            <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800">Active Assessments: {stats.activeAssessments}</span>
+            <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800">Pending Tasks: {stats.pendingTasks}</span>
+          </div>
+        )}
+        {stats.urgentTasks > 0 && (
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-300 pt-1">
+            You have {stats.urgentTasks} tasks requiring attention.
+          </p>
+        )}
       </div>
+
+      <Card>
+        <CardContent className="pt-5 pb-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <CreateGroupButton onGroupCreated={loadDashboard} />
+            <Link href="/ai-planner"><Button variant="teal">Create Assessment</Button></Link>
+            <Link href="/smartgroup-assistant"><Button variant="outline">Open SmartGroup Assistant</Button></Link>
+          </div>
+        </CardContent>
+      </Card>
 
       {error && (
         <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
           {error}
         </div>
       )}
+
+      {!hasGroups && (
+        <Card>
+          <CardHeader>
+            <CardTitle>No groups yet.</CardTitle>
+            <CardDescription>Create your first group to start planning your next assessment.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CreateGroupButton onGroupCreated={loadDashboard} />
+          </CardContent>
+        </Card>
+      )}
+
+      {hasGroups && (
+        <>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Card className="sg-hover-lift">
@@ -291,9 +337,9 @@ export default function DashboardPage() {
           <CardContent className="pt-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Pending Responsibilities</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.pendingResponsibilities}</p>
-                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400"><Clock3 className="w-3 h-3" />Awaiting acceptance</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Pending Tasks</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.pendingTasks}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400"><Clock3 className="w-3 h-3" />Open or in progress</p>
               </div>
               <CheckCircle2 className="w-5 h-5 text-teal-500" />
             </div>
@@ -447,6 +493,8 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }
