@@ -111,10 +111,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogleError = () => {
-    alert('Google login failed.');
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto max-w-7xl px-6 py-6 lg:px-8">
@@ -138,9 +134,16 @@ export default function LoginPage() {
 
             <div className="flex items-center gap-3">
               {hasGoogleClientId ? (
-                <div className="overflow-hidden rounded-full">
-                  <GoogleLogin onSuccess={handleGoogleSuccess} onError={handleGoogleError} />
-                </div>
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => {
+                    alert('Google login failed. Please try again.');
+                  }}
+                  theme="outline"
+                  shape="pill"
+                  text="signin_with"
+                  size="large"
+                />
               ) : (
                 <div className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
                   Google sign-in unavailable
