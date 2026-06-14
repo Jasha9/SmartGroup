@@ -111,6 +111,10 @@ export default function LoginPage() {
     }
   };
 
+  const handleGoogleError = (error) => {
+    console.error('Google login failed:', error);
+    alert('Google login failed. Please try again.');
+  };
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto max-w-7xl px-6 py-6 lg:px-8">
@@ -136,9 +140,7 @@ export default function LoginPage() {
               {hasGoogleClientId ? (
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
-                  onError={() => {
-                    alert('Google login failed. Please try again.');
-                  }}
+                  onError={handleGoogleError}
                   theme="outline"
                   shape="pill"
                   text="signin_with"
