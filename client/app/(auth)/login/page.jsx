@@ -1,6 +1,6 @@
 'use client';
 
-import { Bolt, ChartLine, Play, Sparkles, Users } from 'lucide-react';
+import { Bolt, ChartLine, Sparkles, Users, X } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -65,6 +65,7 @@ export default function LoginPage() {
   const { isAuthenticated, loading, refreshUser } = useAuth();
   const hasGoogleClientId = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const [isDemoWidgetVisible, setIsDemoWidgetVisible] = useState(true);
   const [demoForm, setDemoForm] = useState({ name: '', email: '', message: '' });
   const [isDemoSubmitted, setIsDemoSubmitted] = useState(false);
 
@@ -260,18 +261,34 @@ export default function LoginPage() {
           <section id="demo" className="space-y-8 px-2 sm:px-0">
             <div className="max-w-3xl">
               <p className="text-sm uppercase tracking-[0.35em] text-teal-600 dark:text-teal-400">See SmartGroup in action</p>
-              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Demo video coming soon</h2>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-950 dark:text-white sm:text-4xl">Watch our SmartGroup demo</h2>
             </div>
 
-            <div className="rounded-[2rem] border border-slate-200 bg-white p-14 text-center shadow-lg shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
-              {/* TODO: Replace this placeholder with YouTube embed iframe */}
-              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xl shadow-indigo-500/20">
-                <Play className="h-10 w-10" />
+            <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-lg shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
+              <div className="relative h-[240px] w-full overflow-hidden sm:h-[360px] lg:h-[480px]">
+                <iframe
+                  className="absolute inset-0 h-full w-full"
+                  src="https://www.youtube.com/embed/-oKNZo60Wdo?rel=0"
+                  title="SmartGroup Demo Video"
+                  loading="eager"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
               </div>
-              <p className="mt-6 text-xl font-semibold text-slate-950 dark:text-white">Demo video coming soon</p>
-              <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                We will add our walkthrough video here to explain how SmartGroup helps student teams manage group work.
-              </p>
+              <div className="border-t border-slate-200 px-4 py-3 text-center text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                If the embedded player does not load, watch it directly on
+                {' '}
+                <a
+                  href="https://youtu.be/-oKNZo60Wdo"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+                >
+                  YouTube
+                </a>
+                .
+              </div>
             </div>
           </section>
 
@@ -414,21 +431,32 @@ export default function LoginPage() {
           </Modal>
         </main>
 
-        <div className="fixed bottom-6 right-6 z-40 hidden max-w-sm rounded-[2rem] border border-slate-200 bg-white/95 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100 md:block">
-          <div className="flex items-start gap-4">
-            <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-3xl bg-indigo-600 text-white">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm uppercase tracking-[0.35em] text-indigo-600 dark:text-indigo-400">Demo Available</p>
-              <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
-                Ready to see SmartGroup in action? Request a tailored walkthrough with one click.
+        <div className="fixed bottom-6 right-6 z-40 hidden md:block">
+          {isDemoWidgetVisible ? (
+            <div className="max-w-xs rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl shadow-slate-900/10 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Demo</p>
+                <button
+                  type="button"
+                  aria-label="Close demo widget"
+                  onClick={() => setIsDemoWidgetVisible(false)}
+                  className="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-xs leading-5 text-slate-700 dark:text-slate-300">
+                Need a walkthrough?
               </p>
-              <Button variant="indigo" size="sm" className="mt-4" onClick={openDemoPopup}>
-                Request a Demo
+              <Button variant="indigo" size="sm" className="mt-3 w-full" onClick={openDemoPopup}>
+                Request Demo
               </Button>
             </div>
-          </div>
+          ) : (
+            <Button variant="indigo" size="sm" className="rounded-full" onClick={() => setIsDemoWidgetVisible(true)}>
+              Request Demo
+            </Button>
+          )}
         </div>
       </div>
     </div>
