@@ -2,8 +2,18 @@ const OpenAI = require("openai");
 const { PDFParse } = require("pdf-parse");
 const pool = require('../db/db');
 
-const DAILY_GENERATION_LIMIT = 3;
+const DEFAULT_DAILY_GENERATION_LIMIT = 20;
 const QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function getDailyGenerationLimit() {
+  const configuredLimit = Number(process.env.AI_DAILY_GENERATION_LIMIT);
+
+  if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
+    return Math.floor(configuredLimit);
+  }
+
+  return DEFAULT_DAILY_GENERATION_LIMIT;
+}
 
 const SYSTEM_PROMPT = `You are a project planning assistant for university group assignments.
 Given an assignment description, generate a practical task breakdown for a student team.
@@ -24,19 +34,26 @@ function getOpenAIClient() {
 }
 
 function buildUsagePayload(planRow, now = new Date()) {
+  const dailyGenerationLimit = getDailyGenerationLimit();
+  const unlimited = dailyGenerationLimit === 0;
   const lastGeneratedAt = planRow?.last_gen_at ? new Date(planRow.last_gen_at) : null;
   const generationCount = Number(planRow?.generation_count || 0);
   const lastGeneratedAtMs = lastGeneratedAt?.getTime() || null;
   const windowActive = lastGeneratedAtMs ? now.getTime() - lastGeneratedAtMs < QUOTA_WINDOW_MS : false;
-  const remaining = windowActive ? Math.max(0, DAILY_GENERATION_LIMIT - generationCount) : DAILY_GENERATION_LIMIT;
+  const remaining = unlimited
+    ? null
+    : windowActive
+      ? Math.max(0, dailyGenerationLimit - generationCount)
+      : dailyGenerationLimit;
   const resetAt = lastGeneratedAtMs ? new Date(lastGeneratedAtMs + QUOTA_WINDOW_MS) : null;
 
   return {
     generationCount: windowActive ? generationCount : 0,
-    limit: DAILY_GENERATION_LIMIT,
+    limit: unlimited ? null : dailyGenerationLimit,
     remaining,
     resetAt: resetAt?.toISOString() || null,
     windowActive,
+    unlimited,
   };
 }
 
@@ -126,7 +143,7 @@ async function reserveGenerationSlot(client, groupId) {
   const planRow = await getOrCreateTaskPlan(client, groupId);
   const currentUsage = buildUsagePayload(planRow, now);
 
-  if (currentUsage.windowActive && currentUsage.generationCount >= DAILY_GENERATION_LIMIT) {
+  if (!currentUsage.unlimited && currentUsage.windowActive && currentUsage.generationCount >= currentUsage.limit) {
     const error = new Error('Daily AI generation quota reached for this group. Please wait until the quota resets.');
     error.statusCode = 429;
     error.usage = currentUsage;
